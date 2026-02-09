@@ -39,6 +39,24 @@ const showingNavigationDropdown = ref(false);
                                 >
                                     Dashboard
                                 </NavLink>
+                                <NavLink
+                                    :href="route('ingestion.upload')"
+                                    :active="route().current('ingestion.upload')"
+                                >
+                                    Cargar CSV
+                                </NavLink>
+                                <NavLink
+                                    :href="route('ingestion.batches')"
+                                    :active="route().current('ingestion.batches')"
+                                >
+                                    Batches
+                                </NavLink>
+                                <NavLink
+                                    :href="route('simulation.run')"
+                                    :active="route().current('simulation.run')"
+                                >
+                                    Simular
+                                </NavLink>
                             </div>
                         </div>
 
@@ -145,6 +163,24 @@ const showingNavigationDropdown = ref(false);
                             :active="route().current('dashboard')"
                         >
                             Dashboard
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('ingestion.upload')"
+                            :active="route().current('ingestion.upload')"
+                        >
+                            Cargar CSV
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('ingestion.batches')"
+                            :active="route().current('ingestion.batches')"
+                        >
+                            Batches
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('simulation.run')"
+                            :active="route().current('simulation.run')"
+                        >
+                            Simular
                         </ResponsiveNavLink>
                     </div>
 
