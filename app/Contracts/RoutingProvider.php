@@ -5,6 +5,11 @@ namespace App\Contracts;
 interface RoutingProvider
 {
     /**
+     * Provider identifier used for caching and observability.
+     */
+    public function name(): string;
+
+    /**
      * Build a street-valid route polyline and aggregate metrics.
      *
      * @param  list<array{lat: float, lng: float}>  $stops
