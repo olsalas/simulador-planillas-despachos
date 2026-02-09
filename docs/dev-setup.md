@@ -56,3 +56,21 @@ Test puntual:
 ```bash
 ./vendor/bin/sail artisan test --filter=HealthCheckTest
 ```
+
+## 6) Formatos CSV soportados (MVP)
+
+### Conductores (`type=drivers`)
+
+Headers esperados:
+
+```csv
+external_id,name,email,phone
+```
+
+### Facturas (`type=invoices`)
+
+Headers esperados:
+
+```csv
+external_invoice_id,invoice_number,driver_external_id,driver_name,service_date,branch_code,historical_sequence,historical_latitude,historical_longitude
+```

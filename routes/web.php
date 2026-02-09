@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\Ingestion\BatchController;
+use App\Http\Controllers\Ingestion\UploadCsvController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -27,13 +29,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return Inertia::render('Dashboard');
     })->name('dashboard');
 
-    Route::get('/dashboard/upload-csv', function () {
-        return Inertia::render('Ingestion/UploadCsv');
-    })->name('ingestion.upload');
-
-    Route::get('/dashboard/batches', function () {
-        return Inertia::render('Ingestion/Batches');
-    })->name('ingestion.batches');
+    Route::get('/dashboard/upload-csv', [UploadCsvController::class, 'create'])->name('ingestion.upload');
+    Route::post('/dashboard/upload-csv', [UploadCsvController::class, 'store'])->name('ingestion.upload.store');
+    Route::get('/dashboard/batches', [BatchController::class, 'index'])->name('ingestion.batches');
+    Route::get('/dashboard/batches/{routeBatch}', [BatchController::class, 'show'])->name('ingestion.batches.show');
 
     Route::get('/dashboard/simulate', function () {
         return Inertia::render('Simulation/Run');
