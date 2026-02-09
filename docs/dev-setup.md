@@ -1,37 +1,55 @@
-# Desarrollo local (Sail)
+# Desarrollo local
 
-## 1) Levantar contenedores
+Este documento describe cómo levantar el proyecto en local con y sin Docker.
+
+## Prerrequisitos
+
+- `PHP 8.2+`
+- `Composer`
+- `Node.js 20+` y `npm`
+- Opcional (recomendado): `Docker` + `Docker Compose` para usar Sail
+
+## Opción A: Sail (recomendada)
+
+### 1) Preparar entorno
+
+```bash
+cp .env.example .env
+composer install
+```
+
+Ajusta la sección DB en `.env` para Sail:
+
+```dotenv
+DB_CONNECTION=pgsql
+DB_HOST=pgsql
+DB_PORT=5432
+DB_DATABASE=ruteo
+DB_USERNAME=sail
+DB_PASSWORD=password
+
+CACHE_STORE=redis
+QUEUE_CONNECTION=redis
+SESSION_DRIVER=redis
+REDIS_HOST=redis
+```
+
+### 2) Levantar contenedores
 
 ```bash
 ./vendor/bin/sail up -d
-```
-
-Verificar estado:
-
-```bash
 ./vendor/bin/sail ps
 ```
 
-## 2) Instalar dependencias (si aplica)
+### 3) Inicializar aplicación
 
 ```bash
-./vendor/bin/sail composer install
+./vendor/bin/sail artisan key:generate
+./vendor/bin/sail artisan migrate
 ./vendor/bin/sail npm install
 ```
 
-## 3) Ejecutar migraciones
-
-```bash
-./vendor/bin/sail artisan migrate
-```
-
-Recrear desde cero (solo en local):
-
-```bash
-./vendor/bin/sail artisan migrate:fresh
-```
-
-## 4) Levantar frontend con Vite
+### 4) Frontend (Vite)
 
 ```bash
 ./vendor/bin/sail npm run dev
@@ -43,21 +61,54 @@ Build de assets:
 ./vendor/bin/sail npm run build
 ```
 
-## 5) Ejecutar tests
+## Opción B: local sin Docker
+
+Esta opción usa SQLite por defecto (`.env.example` ya viene preparado para eso).
+
+### 1) Instalar dependencias
+
+```bash
+cp .env.example .env
+composer install
+npm install
+```
+
+### 2) Inicializar aplicación
+
+```bash
+php artisan key:generate
+php artisan migrate
+```
+
+### 3) Levantar entorno de desarrollo
+
+```bash
+composer run dev
+```
+
+## Tests
 
 Suite completa:
+
+```bash
+php artisan test
+```
+
+Con Sail:
 
 ```bash
 ./vendor/bin/sail artisan test
 ```
 
-Test puntual:
+Tests clave por flujo:
 
 ```bash
-./vendor/bin/sail artisan test --filter=HealthCheckTest
+php artisan test --filter=CsvImportTest
+php artisan test --filter=SimulationPreviewTest
+php artisan test --filter=HealthCheckTest
 ```
 
-## 6) Formatos CSV soportados (MVP)
+## Formatos CSV soportados (MVP)
 
 ### Conductores (`type=drivers`)
 
@@ -75,7 +126,7 @@ Headers esperados:
 external_invoice_id,invoice_number,driver_external_id,driver_name,service_date,branch_code,historical_sequence,historical_latitude,historical_longitude
 ```
 
-## 7) Simulación con mapa (PR #3)
+## Simulación con mapa
 
 Variables opcionales en `.env`:
 
@@ -83,13 +134,16 @@ Variables opcionales en `.env`:
 ROUTING_PROVIDER=auto
 HERE_API_KEY=
 ROUTING_CACHE_TTL_SECONDS=86400
+ROUTING_FALLBACK_DEPOT_NAME="CEDIS Fallback"
+ROUTING_FALLBACK_DEPOT_LAT=
+ROUTING_FALLBACK_DEPOT_LNG=
 ```
 
 - `ROUTING_PROVIDER=auto`: usa HERE si hay API key; si no, usa mock.
 - `ROUTING_PROVIDER=here`: fuerza HERE (si falla o no hay key, cae a mock).
 - `ROUTING_PROVIDER=mock`: siempre une puntos (solo UI/demo).
 
-Validación manual mínima:
+## Validación manual mínima
 
 1. Crea/asegura un `depot` con lat/lng y un `route_batch` con `invoice_stops` geocodificados.
 2. Navega a `/dashboard/simulate`.
