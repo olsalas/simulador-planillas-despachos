@@ -101,6 +101,10 @@ Con Sail:
 ./vendor/bin/sail artisan test
 ```
 
+Nota operativa:
+- No lances múltiples procesos independientes de `artisan test` en paralelo contra la misma base `testing` de PostgreSQL.
+- Si necesitas paralelismo, usa `php artisan test --parallel` o aísla la base de datos por proceso.
+
 Casos clave cubiertos:
 - `tests/Feature/Ingestion/CsvImportTest.php`
 - `tests/Feature/Simulation/SimulationPreviewTest.php`

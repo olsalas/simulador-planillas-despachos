@@ -100,6 +100,11 @@ Con Sail:
 ./vendor/bin/sail artisan test
 ```
 
+Nota operativa:
+- Evita correr varios comandos independientes de `artisan test` al mismo tiempo contra la misma base `testing` en PostgreSQL.
+- El flujo validado del proyecto es secuencial.
+- Si se quiere paralelizar, debe hacerse con `artisan test --parallel` o con bases aisladas por proceso.
+
 Tests clave por flujo:
 
 ```bash
