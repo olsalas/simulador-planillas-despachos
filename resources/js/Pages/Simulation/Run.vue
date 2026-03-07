@@ -37,9 +37,11 @@ const comparisonData = ref(null);
 const activeView = ref('historical');
 const mapContainer = ref(null);
 const mapErrorMessage = ref('');
+const selectedStop = ref(null);
 
 let map = null;
-let markers = [];
+let markerEntries = [];
+let markerLookup = new Map();
 
 const availableDates = computed(() => [...new Set(props.batches.map((batch) => batch.service_date))]);
 const filteredBatches = computed(() => {
@@ -218,6 +220,27 @@ function markerElement(label, backgroundColor) {
     return node;
 }
 
+function isStopSelected(routeView, stopKey) {
+    return selectedStop.value?.routeView === routeView && selectedStop.value?.stopKey === stopKey;
+}
+
+function setMarkerSelectedState(entry, isSelected) {
+    entry.element.style.transform = isSelected ? 'scale(1.18)' : 'scale(1)';
+    entry.element.style.boxShadow = isSelected
+        ? '0 0 0 4px rgba(59, 130, 246, 0.18), 0 4px 10px rgba(15, 23, 42, 0.35)'
+        : '0 1px 4px rgba(0,0,0,0.35)';
+    entry.element.style.zIndex = isSelected ? '10' : '1';
+}
+
+function applySelectedMarkerState() {
+    for (const entry of markerEntries) {
+        const isSelected = entry.kind === 'stop'
+            && isStopSelected(activeView.value, entry.key);
+
+        setMarkerSelectedState(entry, isSelected);
+    }
+}
+
 function supportsWebGl() {
     const canvas = document.createElement('canvas');
 
@@ -272,11 +295,12 @@ function ensureMap(center) {
 }
 
 function clearMarkers() {
-    for (const marker of markers) {
-        marker.remove();
+    for (const entry of markerEntries) {
+        entry.marker.remove();
     }
 
-    markers = [];
+    markerEntries = [];
+    markerLookup = new Map();
 }
 
 function clearMapPresentation() {
@@ -355,19 +379,37 @@ function renderMap() {
 
         clearMarkers();
 
+        const depotElement = markerElement('D', '#0f172a');
+        depotElement.addEventListener('click', () => {
+            selectedStop.value = null;
+        });
+
         const depotMarker = new maplibregl.Marker({
-            element: markerElement('D', '#0f172a'),
+            element: depotElement,
         })
             .setLngLat([depot.lng, depot.lat])
             .setPopup(
                 new maplibregl.Popup({ offset: 18 }).setHTML(buildDepotPopupHtml(depot)),
             )
             .addTo(map);
-        markers.push(depotMarker);
+        markerEntries.push({
+            key: 'depot',
+            kind: 'depot',
+            marker: depotMarker,
+            element: depotElement,
+        });
 
         for (const stop of routeData.stops) {
+            const stopElement = markerElement(String(stop.sequence), stopColor);
+            stopElement.addEventListener('click', () => {
+                selectedStop.value = {
+                    routeView: activeView.value,
+                    stopKey: stop.stop_key,
+                };
+            });
+
             const stopMarker = new maplibregl.Marker({
-                element: markerElement(String(stop.sequence), stopColor),
+                element: stopElement,
             })
                 .setLngLat([stop.lng, stop.lat])
                 .setPopup(
@@ -376,7 +418,26 @@ function renderMap() {
                     ),
                 )
                 .addTo(map);
-            markers.push(stopMarker);
+            const entry = {
+                key: stop.stop_key,
+                kind: 'stop',
+                marker: stopMarker,
+                element: stopElement,
+            };
+
+            markerEntries.push(entry);
+            markerLookup.set(stop.stop_key, entry);
+        }
+
+        applySelectedMarkerState();
+
+        if (selectedStop.value?.routeView === activeView.value) {
+            const selectedEntry = markerLookup.get(selectedStop.value.stopKey);
+            const selectedPopup = selectedEntry?.marker.getPopup();
+
+            if (selectedEntry && selectedPopup) {
+                selectedPopup.setLngLat(selectedEntry.marker.getLngLat()).addTo(map);
+            }
         }
 
         const bounds = new maplibregl.LngLatBounds();
@@ -399,10 +460,49 @@ function renderMap() {
     map.once('load', draw);
 }
 
+function openStopPopup(stopKey, { flyTo = true } = {}) {
+    if (!map) {
+        return;
+    }
+
+    const entry = markerLookup.get(stopKey);
+    const popup = entry?.marker.getPopup();
+
+    if (!entry || !popup) {
+        return;
+    }
+
+    popup.setLngLat(entry.marker.getLngLat()).addTo(map);
+
+    if (flyTo) {
+        map.flyTo({
+            center: entry.marker.getLngLat(),
+            zoom: Math.max(map.getZoom(), 13),
+            essential: true,
+        });
+    }
+}
+
+async function focusStop(stop, routeView) {
+    selectedStop.value = {
+        routeView,
+        stopKey: stop.stop_key,
+    };
+
+    if (activeView.value !== routeView) {
+        activeView.value = routeView;
+        return;
+    }
+
+    await nextTick();
+    openStopPopup(stop.stop_key);
+}
+
 async function compareJourney() {
     errorMessage.value = '';
     comparisonData.value = null;
     mapErrorMessage.value = '';
+    selectedStop.value = null;
     clearMapPresentation();
 
     if (!form.value.route_batch_id) {
@@ -445,6 +545,7 @@ watch(filteredBatches, (batches) => {
     comparisonData.value = null;
     errorMessage.value = '';
     mapErrorMessage.value = '';
+    selectedStop.value = null;
     clearMapPresentation();
 });
 
@@ -456,8 +557,17 @@ watch(() => form.value.route_batch_id, (newBatchId, oldBatchId) => {
     comparisonData.value = null;
     errorMessage.value = '';
     mapErrorMessage.value = '';
+    selectedStop.value = null;
     clearMapPresentation();
 });
+
+watch(selectedStop, () => {
+    applySelectedMarkerState();
+
+    if (selectedStop.value?.routeView === activeView.value) {
+        openStopPopup(selectedStop.value.stopKey, { flyTo: false });
+    }
+}, { deep: true });
 
 watch(activeRoute, async (routeData) => {
     if (!routeData) {
@@ -710,7 +820,7 @@ onBeforeUnmount(() => {
                                 <div>
                                     <h3 class="text-base font-semibold text-gray-900">Mapa de comparación</h3>
                                     <p class="text-sm text-gray-500">
-                                        Alterna entre la reconstrucción histórica y la ruta sugerida.
+                                        Alterna entre la reconstrucción histórica y la ruta sugerida. Haz clic en el mapa o en las listas para sincronizar la parada seleccionada.
                                     </p>
                                 </div>
 
@@ -763,7 +873,11 @@ onBeforeUnmount(() => {
                                     <li
                                         v-for="stop in historicalRoute.stops"
                                         :key="`historical-${stop.stop_key}`"
-                                        class="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm"
+                                        class="cursor-pointer rounded-md border px-3 py-2 text-sm transition"
+                                        :class="isStopSelected('historical', stop.stop_key)
+                                            ? 'border-blue-400 bg-blue-100 ring-2 ring-blue-200'
+                                            : 'border-blue-100 bg-blue-50 hover:border-blue-200 hover:bg-blue-100/80'"
+                                        @click="focusStop(stop, 'historical')"
                                     >
                                         <div class="flex items-start justify-between gap-3">
                                             <div>
@@ -772,6 +886,9 @@ onBeforeUnmount(() => {
                                                 </p>
                                                 <p class="text-xs text-blue-700">
                                                     {{ stop.branch_code }} · {{ stop.invoice_count }} facturas
+                                                </p>
+                                                <p v-if="stop.branch_address" class="mt-1 text-xs text-blue-600">
+                                                    {{ stop.branch_address }}
                                                 </p>
                                             </div>
                                             <span class="rounded-full bg-white px-2 py-1 text-xs font-medium text-blue-800">
@@ -788,7 +905,11 @@ onBeforeUnmount(() => {
                                     <li
                                         v-for="stop in suggestedRoute.stops"
                                         :key="`suggested-${stop.stop_key}`"
-                                        class="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm"
+                                        class="cursor-pointer rounded-md border px-3 py-2 text-sm transition"
+                                        :class="isStopSelected('suggested', stop.stop_key)
+                                            ? 'border-emerald-400 bg-emerald-100 ring-2 ring-emerald-200'
+                                            : 'border-emerald-100 bg-emerald-50 hover:border-emerald-200 hover:bg-emerald-100/80'"
+                                        @click="focusStop(stop, 'suggested')"
                                     >
                                         <div class="flex items-start justify-between gap-3">
                                             <div>
@@ -797,6 +918,9 @@ onBeforeUnmount(() => {
                                                 </p>
                                                 <p class="text-xs text-emerald-700">
                                                     {{ stop.branch_code }} · {{ stop.invoice_count }} facturas
+                                                </p>
+                                                <p v-if="stop.branch_address" class="mt-1 text-xs text-emerald-600">
+                                                    {{ stop.branch_address }}
                                                 </p>
                                             </div>
                                             <span class="rounded-full bg-white px-2 py-1 text-xs font-medium text-emerald-800">
