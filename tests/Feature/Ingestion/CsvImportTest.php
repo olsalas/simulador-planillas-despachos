@@ -15,7 +15,7 @@ class CsvImportTest extends TestCase
 
     public function test_it_imports_csv_and_stores_valid_and_invalid_rows(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->canUploadCsv()->create();
 
         Branch::create([
             'code' => 'BR-001',
@@ -61,7 +61,7 @@ CSV;
 
     public function test_it_consolidates_invoices_into_stops_and_updates_batch_totals(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->canUploadCsv()->create();
 
         Branch::create([
             'code' => 'BR-001',
@@ -110,5 +110,23 @@ CSV;
             'status' => 'pending',
             'outlier_reason' => 'branch_not_found',
         ]);
+    }
+
+    public function test_non_privileged_users_cannot_access_csv_upload_routes(): void
+    {
+        $user = User::factory()->create();
+
+        $getResponse = $this->actingAs($user)->get(route('ingestion.upload'));
+        $getResponse->assertForbidden();
+
+        $file = UploadedFile::fake()->createWithContent('invoices.csv', "external_invoice_id,driver_external_id,service_date,branch_code\nINV-1,DRV-1,2026-02-01,BR-001\n");
+
+        $postResponse = $this->actingAs($user)->post(route('ingestion.upload.store'), [
+            'type' => 'invoices',
+            'file' => $file,
+        ]);
+
+        $postResponse->assertForbidden();
+        $this->assertDatabaseCount('ingestion_batches', 0);
     }
 }

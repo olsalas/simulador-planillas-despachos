@@ -40,6 +40,7 @@ const showingNavigationDropdown = ref(false);
                                     Dashboard
                                 </NavLink>
                                 <NavLink
+                                    v-if="$page.props.auth.abilities.upload_csv"
                                     :href="route('ingestion.upload')"
                                     :active="route().current('ingestion.upload')"
                                 >
@@ -165,6 +166,7 @@ const showingNavigationDropdown = ref(false);
                             Dashboard
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
+                            v-if="$page.props.auth.abilities.upload_csv"
                             :href="route('ingestion.upload')"
                             :active="route().current('ingestion.upload')"
                         >
