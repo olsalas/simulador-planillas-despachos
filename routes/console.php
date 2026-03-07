@@ -85,93 +85,99 @@ Artisan::command('demo:load-generated-data {--skip-invoices : Skip importing inv
 /**
  * @return array{upserted: int}
  */
-function demoLoadBranches(string $path): array
-{
-    $count = 0;
+if (! function_exists('demoLoadBranches')) {
+    function demoLoadBranches(string $path): array
+    {
+        $count = 0;
 
-    foreach (demoReadCsv($path) as $row) {
-        $code = trim((string) ($row['code'] ?? ''));
-        if ($code === '') {
-            continue;
+        foreach (demoReadCsv($path) as $row) {
+            $code = trim((string) ($row['code'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+
+            Branch::updateOrCreate(
+                ['code' => $code],
+                [
+                    'name' => trim((string) ($row['name'] ?? '')) ?: 'Branch '.$code,
+                    'address' => demoNullableString($row['address'] ?? null),
+                    'latitude' => demoNullableDecimal($row['latitude'] ?? null),
+                    'longitude' => demoNullableDecimal($row['longitude'] ?? null),
+                    'is_active' => demoTruthyFlag($row['is_active'] ?? '1'),
+                ]
+            );
+
+            $count++;
         }
 
-        Branch::updateOrCreate(
-            ['code' => $code],
-            [
-                'name' => trim((string) ($row['name'] ?? '')) ?: 'Branch '.$code,
-                'address' => demoNullableString($row['address'] ?? null),
-                'latitude' => demoNullableDecimal($row['latitude'] ?? null),
-                'longitude' => demoNullableDecimal($row['longitude'] ?? null),
-                'is_active' => demoTruthyFlag($row['is_active'] ?? '1'),
-            ]
-        );
-
-        $count++;
+        return ['upserted' => $count];
     }
-
-    return ['upserted' => $count];
 }
 
 /**
  * @return array{upserted: int}
  */
-function demoLoadDepots(string $path): array
-{
-    $count = 0;
+if (! function_exists('demoLoadDepots')) {
+    function demoLoadDepots(string $path): array
+    {
+        $count = 0;
 
-    foreach (demoReadCsv($path) as $row) {
-        $code = trim((string) ($row['code'] ?? ''));
-        if ($code === '') {
-            continue;
+        foreach (demoReadCsv($path) as $row) {
+            $code = trim((string) ($row['code'] ?? ''));
+            if ($code === '') {
+                continue;
+            }
+
+            Depot::updateOrCreate(
+                ['code' => $code],
+                [
+                    'name' => trim((string) ($row['name'] ?? '')) ?: 'Depot '.$code,
+                    'address' => demoNullableString($row['address'] ?? null),
+                    'latitude' => (float) ($row['latitude'] ?? 0),
+                    'longitude' => (float) ($row['longitude'] ?? 0),
+                    'is_active' => demoTruthyFlag($row['is_active'] ?? '1'),
+                ]
+            );
+
+            $count++;
         }
 
-        Depot::updateOrCreate(
-            ['code' => $code],
-            [
-                'name' => trim((string) ($row['name'] ?? '')) ?: 'Depot '.$code,
-                'address' => demoNullableString($row['address'] ?? null),
-                'latitude' => (float) ($row['latitude'] ?? 0),
-                'longitude' => (float) ($row['longitude'] ?? 0),
-                'is_active' => demoTruthyFlag($row['is_active'] ?? '1'),
-            ]
-        );
-
-        $count++;
+        return ['upserted' => $count];
     }
-
-    return ['upserted' => $count];
 }
 
 /**
  * @return array{assigned: int}
  */
-function demoApplyDriverDepotAssignments(string $path): array
-{
-    $assigned = 0;
+if (! function_exists('demoApplyDriverDepotAssignments')) {
+    function demoApplyDriverDepotAssignments(string $path): array
+    {
+        $assigned = 0;
 
-    foreach (demoReadCsv($path) as $row) {
-        $driverExternalId = trim((string) ($row['driver_external_id'] ?? ''));
-        $depotCode = trim((string) ($row['depot_code'] ?? ''));
+        foreach (demoReadCsv($path) as $row) {
+            $driverExternalId = trim((string) ($row['driver_external_id'] ?? ''));
+            $depotCode = trim((string) ($row['depot_code'] ?? ''));
 
-        if ($driverExternalId === '' || $depotCode === '') {
-            continue;
+            if ($driverExternalId === '' || $depotCode === '') {
+                continue;
+            }
+
+            $driver = Driver::query()->where('external_id', $driverExternalId)->first();
+            $depot = Depot::query()->where('code', $depotCode)->first();
+
+            if ($driver === null || $depot === null) {
+                continue;
+            }
+
+            if ($driver->depot_id !== $depot->id) {
+                $driver->update(['depot_id' => $depot->id]);
+            }
+
+            $assigned++;
         }
 
-        $driver = Driver::query()->where('external_id', $driverExternalId)->first();
-        $depot = Depot::query()->where('code', $depotCode)->first();
-
-        if ($driver === null || $depot === null) {
-            continue;
-        }
-
-        if ($driver->depot_id !== $depot->id) {
-            $driver->update(['depot_id' => $depot->id]);
-        }
-
-        $assigned++;
+        return ['assigned' => $assigned];
     }
-
-    return ['assigned' => $assigned];
 }
 
 /**
@@ -182,177 +188,189 @@ function demoApplyDriverDepotAssignments(string $path): array
  *     chunks_imported: int
  * }
  */
-function demoImportInvoicesInChunks(
-    CsvIngestionService $csvIngestionService,
-    string $path,
-    int $chunkSize,
-    object $command,
-): array {
-    $handle = fopen($path, 'rb');
-    if ($handle === false) {
-        throw new RuntimeException('Unable to open '.$path);
-    }
-
-    $headers = fgetcsv($handle);
-    if ($headers === false) {
-        fclose($handle);
-
-        return [
-            'valid_rows' => 0,
-            'invalid_rows' => 0,
-            'affected_route_batches' => [],
-            'chunks_imported' => 0,
-        ];
-    }
-
-    $validRows = 0;
-    $invalidRows = 0;
-    $affectedRouteBatches = [];
-    $chunksImported = 0;
-    $chunkRows = 0;
-    $chunkPath = null;
-    $chunkHandle = null;
-
-    $flushChunk = function () use (
-        &$chunkHandle,
-        &$chunkPath,
-        &$chunkRows,
-        &$chunksImported,
-        &$validRows,
-        &$invalidRows,
-        &$affectedRouteBatches,
-        $csvIngestionService,
-        $command,
-    ): void {
-        if ($chunkHandle === null || $chunkPath === null || $chunkRows === 0) {
-            return;
+if (! function_exists('demoImportInvoicesInChunks')) {
+    function demoImportInvoicesInChunks(
+        CsvIngestionService $csvIngestionService,
+        string $path,
+        int $chunkSize,
+        object $command,
+    ): array {
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            throw new RuntimeException('Unable to open '.$path);
         }
 
-        fclose($chunkHandle);
+        $headers = fgetcsv($handle);
+        if ($headers === false) {
+            fclose($handle);
+
+            return [
+                'valid_rows' => 0,
+                'invalid_rows' => 0,
+                'affected_route_batches' => [],
+                'chunks_imported' => 0,
+            ];
+        }
+
+        $validRows = 0;
+        $invalidRows = 0;
+        $affectedRouteBatches = [];
+        $chunksImported = 0;
+        $chunkRows = 0;
+        $chunkPath = null;
         $chunkHandle = null;
 
-        $chunksImported++;
-        $command->line("Importing invoice chunk {$chunksImported} ({$chunkRows} rows)...");
-
-        $report = $csvIngestionService->import(
-            demoMakeUploadedFile($chunkPath),
-            'invoices',
-            null,
-        );
-
-        $validRows += (int) ($report['valid_rows'] ?? 0);
-        $invalidRows += (int) ($report['invalid_rows'] ?? 0);
-
-        foreach (($report['affected_route_batches'] ?? []) as $routeBatchId) {
-            $affectedRouteBatches[(int) $routeBatchId] = true;
-        }
-
-        @unlink($chunkPath);
-        $chunkPath = null;
-        $chunkRows = 0;
-    };
-
-    while (($data = fgetcsv($handle)) !== false) {
-        if ($data === [null] || $data === []) {
-            continue;
-        }
-
-        if ($chunkHandle === null) {
-            $chunkPath = tempnam(sys_get_temp_dir(), 'demo_invoices_');
-            if ($chunkPath === false) {
-                throw new RuntimeException('Unable to create temporary invoice chunk file.');
+        $flushChunk = function () use (
+            &$chunkHandle,
+            &$chunkPath,
+            &$chunkRows,
+            &$chunksImported,
+            &$validRows,
+            &$invalidRows,
+            &$affectedRouteBatches,
+            $csvIngestionService,
+            $command,
+        ): void {
+            if ($chunkHandle === null || $chunkPath === null || $chunkRows === 0) {
+                return;
             }
 
-            $chunkHandle = fopen($chunkPath, 'wb');
-            if ($chunkHandle === false) {
-                throw new RuntimeException('Unable to write temporary invoice chunk file.');
+            fclose($chunkHandle);
+            $chunkHandle = null;
+
+            $chunksImported++;
+            $command->line("Importing invoice chunk {$chunksImported} ({$chunkRows} rows)...");
+
+            $report = $csvIngestionService->import(
+                demoMakeUploadedFile($chunkPath),
+                'invoices',
+                null,
+            );
+
+            $validRows += (int) ($report['valid_rows'] ?? 0);
+            $invalidRows += (int) ($report['invalid_rows'] ?? 0);
+
+            foreach (($report['affected_route_batches'] ?? []) as $routeBatchId) {
+                $affectedRouteBatches[(int) $routeBatchId] = true;
             }
 
-            fputcsv($chunkHandle, $headers);
+            @unlink($chunkPath);
+            $chunkPath = null;
+            $chunkRows = 0;
+        };
+
+        while (($data = fgetcsv($handle)) !== false) {
+            if ($data === [null] || $data === []) {
+                continue;
+            }
+
+            if ($chunkHandle === null) {
+                $chunkPath = tempnam(sys_get_temp_dir(), 'demo_invoices_');
+                if ($chunkPath === false) {
+                    throw new RuntimeException('Unable to create temporary invoice chunk file.');
+                }
+
+                $chunkHandle = fopen($chunkPath, 'wb');
+                if ($chunkHandle === false) {
+                    throw new RuntimeException('Unable to write temporary invoice chunk file.');
+                }
+
+                fputcsv($chunkHandle, $headers);
+            }
+
+            fputcsv($chunkHandle, $data);
+            $chunkRows++;
+
+            if ($chunkRows >= $chunkSize) {
+                $flushChunk();
+            }
         }
 
-        fputcsv($chunkHandle, $data);
-        $chunkRows++;
+        fclose($handle);
+        $flushChunk();
 
-        if ($chunkRows >= $chunkSize) {
-            $flushChunk();
-        }
+        return [
+            'valid_rows' => $validRows,
+            'invalid_rows' => $invalidRows,
+            'affected_route_batches' => array_keys($affectedRouteBatches),
+            'chunks_imported' => $chunksImported,
+        ];
     }
-
-    fclose($handle);
-    $flushChunk();
-
-    return [
-        'valid_rows' => $validRows,
-        'invalid_rows' => $invalidRows,
-        'affected_route_batches' => array_keys($affectedRouteBatches),
-        'chunks_imported' => $chunksImported,
-    ];
 }
 
 /**
  * @return list<array<string, string>>
  */
-function demoReadCsv(string $path): array
-{
-    $handle = fopen($path, 'rb');
-    if ($handle === false) {
-        throw new RuntimeException('Unable to open '.$path);
-    }
+if (! function_exists('demoReadCsv')) {
+    function demoReadCsv(string $path): array
+    {
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            throw new RuntimeException('Unable to open '.$path);
+        }
 
-    $headers = fgetcsv($handle);
-    if ($headers === false) {
+        $headers = fgetcsv($handle);
+        if ($headers === false) {
+            fclose($handle);
+
+            return [];
+        }
+
+        $headers = array_map(static fn ($value): string => trim((string) $value), $headers);
+        $rows = [];
+
+        while (($data = fgetcsv($handle)) !== false) {
+            if ($data === [null] || $data === []) {
+                continue;
+            }
+
+            $row = [];
+            foreach ($headers as $index => $header) {
+                $row[$header] = trim((string) ($data[$index] ?? ''));
+            }
+
+            $rows[] = $row;
+        }
+
         fclose($handle);
 
-        return [];
+        return $rows;
     }
+}
 
-    $headers = array_map(static fn ($value): string => trim((string) $value), $headers);
-    $rows = [];
-
-    while (($data = fgetcsv($handle)) !== false) {
-        if ($data === [null] || $data === []) {
-            continue;
-        }
-
-        $row = [];
-        foreach ($headers as $index => $header) {
-            $row[$header] = trim((string) ($data[$index] ?? ''));
-        }
-
-        $rows[] = $row;
+if (! function_exists('demoMakeUploadedFile')) {
+    function demoMakeUploadedFile(string $path): UploadedFile
+    {
+        return new UploadedFile(
+            $path,
+            basename($path),
+            'text/csv',
+            test: true,
+        );
     }
-
-    fclose($handle);
-
-    return $rows;
 }
 
-function demoMakeUploadedFile(string $path): UploadedFile
-{
-    return new UploadedFile(
-        $path,
-        basename($path),
-        'text/csv',
-        test: true,
-    );
+if (! function_exists('demoNullableString')) {
+    function demoNullableString(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value === '' ? null : $value;
+    }
 }
 
-function demoNullableString(mixed $value): ?string
-{
-    $value = trim((string) $value);
+if (! function_exists('demoNullableDecimal')) {
+    function demoNullableDecimal(mixed $value): ?float
+    {
+        $value = trim((string) $value);
 
-    return $value === '' ? null : $value;
+        return $value === '' ? null : (float) $value;
+    }
 }
 
-function demoNullableDecimal(mixed $value): ?float
-{
-    $value = trim((string) $value);
-
-    return $value === '' ? null : (float) $value;
-}
-
-function demoTruthyFlag(mixed $value): bool
-{
-    return in_array(strtoupper(trim((string) $value)), ['1', 'TRUE', 'ACTIVO', 'ACTIVE'], true);
+if (! function_exists('demoTruthyFlag')) {
+    function demoTruthyFlag(mixed $value): bool
+    {
+        return in_array(strtoupper(trim((string) $value)), ['1', 'TRUE', 'ACTIVO', 'ACTIVE'], true);
+    }
 }

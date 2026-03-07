@@ -26,6 +26,7 @@
 /docs/*.csv:Zone.Identifier
 /docs/generated/*.csv
 !/docs/generated/.gitignore
+/.playwright-cli
 Homestead.json
 Homestead.yaml
 Thumbs.db

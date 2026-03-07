@@ -20,7 +20,7 @@ class SimulationController extends Controller
             ->with('driver:id,name,external_id')
             ->orderByDesc('service_date')
             ->orderByDesc('id')
-            ->limit(100)
+            ->limit(500)
             ->get()
             ->map(fn (RouteBatch $batch) => [
                 'id' => $batch->id,
@@ -40,7 +40,7 @@ class SimulationController extends Controller
 
         return Inertia::render('Simulation/Run', [
             'batches' => $batches,
-            'defaultBatchId' => $batches->first()['id'] ?? null,
+            'defaultBatchId' => null,
             'routing' => [
                 'configured_provider' => config('routing.provider'),
                 'effective_provider' => $routingProvider->name(),
