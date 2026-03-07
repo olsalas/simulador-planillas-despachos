@@ -47,6 +47,15 @@ composer install
 
 Abrir: `http://localhost`.
 
+Modo más rápido para navegar localmente desde Windows:
+
+```bash
+./vendor/bin/sail npm run build
+rm -f public/hot
+```
+
+Usa ese modo cuando no estés editando frontend. Evita el Vite dev server y normalmente reduce bastante la latencia percibida entre Windows y WSL.
+
 ### Opción local sin Docker
 
 ```bash

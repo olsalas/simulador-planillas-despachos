@@ -53,6 +53,8 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::define('upload-csv', fn (User $user): bool => $user->can_upload_csv);
 
-        Vite::prefetch(concurrency: 3);
+        if (! $this->app->isLocal()) {
+            Vite::prefetch(concurrency: 3);
+        }
     }
 }
