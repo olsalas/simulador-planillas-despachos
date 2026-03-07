@@ -19,6 +19,13 @@
 /storage/*.key
 /storage/pail
 /vendor
+/docs/conductores_despachos.csv
+/docs/facturas.csv
+/docs/puntos_dispensarios_07022026 (1).csv
+/docs/droguerias_domicilios_07022026 (1).csv
+/docs/*.csv:Zone.Identifier
+/docs/generated/*.csv
+!/docs/generated/.gitignore
 Homestead.json
 Homestead.yaml
 Thumbs.db

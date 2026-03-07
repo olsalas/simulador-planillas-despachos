@@ -1,0 +1,4 @@
+code,name,address,latitude,longitude,is_active
+DEPOT-001,Bodega Principal Bogota,Aut Medellin KM 3.5,4.6400504,-74.1245953,1
+DEPOT-002,Bodega Bucaramanga 30,Kra 33W # 71 - 95,7.0844123,-73.1383076,1
+DEPOT-003,Bodega Valledupar 201,Calle 17 Cra 12 Esquina,10.4712683,-73.2479550,1

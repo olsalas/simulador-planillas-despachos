@@ -1,0 +1,4 @@
+external_invoice_id,invoice_number,driver_external_id,driver_name,service_date,branch_code,historical_sequence,historical_latitude,historical_longitude
+INV-0001,FAC-0001,DRV-001,Conductor Uno,2026-03-02,BR-001,1,10.9792604,-74.7769597
+INV-0002,FAC-0002,DRV-001,Conductor Uno,2026-03-02,BR-002,2,10.9792752,-74.7770001
+INV-0003,FAC-0003,DRV-001,Conductor Uno,2026-03-02,BR-003,3,10.9820096,-74.7779666
