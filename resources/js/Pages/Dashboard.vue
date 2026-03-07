@@ -22,7 +22,10 @@ import { Head, Link } from '@inertiajs/vue3';
                 </p>
 
                 <div class="grid gap-4 md:grid-cols-3">
-                    <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                    <div
+                        v-if="$page.props.auth.abilities.upload_csv"
+                        class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+                    >
                         <h3 class="text-base font-semibold text-gray-900">Cargar CSV</h3>
                         <p class="mt-2 text-sm text-gray-600">
                             Ingresar facturas históricas asignadas a conductor.

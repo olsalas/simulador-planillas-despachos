@@ -33,6 +33,9 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+                'abilities' => [
+                    'upload_csv' => $request->user()?->can('upload-csv') ?? false,
+                ],
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),

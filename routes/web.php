@@ -30,8 +30,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return Inertia::render('Dashboard');
     })->name('dashboard');
 
-    Route::get('/dashboard/upload-csv', [UploadCsvController::class, 'create'])->name('ingestion.upload');
-    Route::post('/dashboard/upload-csv', [UploadCsvController::class, 'store'])->name('ingestion.upload.store');
+    Route::middleware('can:upload-csv')->group(function () {
+        Route::get('/dashboard/upload-csv', [UploadCsvController::class, 'create'])->name('ingestion.upload');
+        Route::post('/dashboard/upload-csv', [UploadCsvController::class, 'store'])->name('ingestion.upload.store');
+    });
+
     Route::get('/dashboard/batches', [BatchController::class, 'index'])->name('ingestion.batches');
     Route::get('/dashboard/batches/{routeBatch}', [BatchController::class, 'show'])->name('ingestion.batches.show');
 

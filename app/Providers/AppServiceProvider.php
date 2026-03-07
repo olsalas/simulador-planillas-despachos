@@ -6,6 +6,8 @@ use App\Contracts\RoutingProvider;
 use App\Domain\Routing\Providers\HereRoutingProvider;
 use App\Domain\Routing\Providers\MockRoutingProvider;
 use App\Domain\Routing\Support\FlexiblePolylineDecoder;
+use App\Models\User;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
@@ -49,6 +51,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Gate::define('upload-csv', fn (User $user): bool => $user->can_upload_csv);
+
         Vite::prefetch(concurrency: 3);
     }
 }

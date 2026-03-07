@@ -11,7 +11,7 @@ class UploadCsvRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true;
+        return $this->user()?->can('upload-csv') ?? false;
     }
 
     /**
