@@ -53,6 +53,12 @@ const showingNavigationDropdown = ref(false);
                                     Batches
                                 </NavLink>
                                 <NavLink
+                                    :href="route('planning.scenarios.index')"
+                                    :active="route().current('planning.scenarios.*')"
+                                >
+                                    Planificar
+                                </NavLink>
+                                <NavLink
                                     :href="route('simulation.run')"
                                     :active="route().current('simulation.run')"
                                 >
@@ -177,6 +183,12 @@ const showingNavigationDropdown = ref(false);
                             :active="route().current('ingestion.batches')"
                         >
                             Batches
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('planning.scenarios.index')"
+                            :active="route().current('planning.scenarios.*')"
+                        >
+                            Planificar
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
                             :href="route('simulation.run')"
