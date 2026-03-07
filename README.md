@@ -72,6 +72,43 @@ external_id,name,email,phone
 external_invoice_id,invoice_number,driver_external_id,driver_name,service_date,branch_code,historical_sequence,historical_latitude,historical_longitude
 ```
 
+Plantillas listas para normalizar archivos del sistema origen:
+- `docs/templates/depots_template.csv`
+- `docs/templates/driver_depot_assignment_template.csv`
+- `docs/templates/branches_template.csv`
+- `docs/templates/drivers_template.csv`
+- `docs/templates/invoices_template.csv`
+
+Mapa de campos desde los extracts del sistema origen:
+- `docs/import-source-mapping.md`
+
+Preparación local de imports desde extracts reales:
+
+```bash
+./vendor/bin/sail php scripts/prepare_import_files.php
+```
+
+Salida local:
+- `docs/generated/depots_seed_candidates.csv`
+- `docs/generated/depots_seed.csv`
+- `docs/generated/driver_depot_candidates.csv`
+- `docs/generated/driver_depot_assignment_review.csv`
+- `docs/generated/driver_depot_assignment_ready.csv`
+- `docs/generated/drivers_import.csv`
+- `docs/generated/branches_seed.csv`
+- `docs/generated/invoices_import.csv`
+
+Carga reproducible de demo local:
+
+```bash
+./vendor/bin/sail artisan demo:load-generated-data
+```
+
+Notas:
+- el comando hace `upsert` de `branches` y `depots`
+- importa `drivers` e `invoices` usando el flujo real de `CsvIngestionService`
+- las facturas se cargan por chunks para evitar el límite de locks de PostgreSQL en un solo transaction batch
+
 ## Configuración de ruteo
 
 Variables relevantes en `.env`:

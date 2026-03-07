@@ -3,7 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import maplibregl from 'maplibre-gl';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const props = defineProps({
@@ -26,16 +26,48 @@ const form = ref({
     return_to_depot: true,
 });
 
+const filters = ref({
+    service_date: '',
+    driver_query: '',
+});
+
 const loading = ref(false);
 const errorMessage = ref('');
 const comparisonData = ref(null);
 const activeView = ref('historical');
 const mapContainer = ref(null);
+const mapErrorMessage = ref('');
 
 let map = null;
 let markers = [];
 
-const hasBatchOptions = computed(() => props.batches.length > 0);
+const availableDates = computed(() => [...new Set(props.batches.map((batch) => batch.service_date))]);
+const filteredBatches = computed(() => {
+    const serviceDate = filters.value.service_date;
+    const driverQuery = filters.value.driver_query.trim().toLowerCase();
+
+    return props.batches.filter((batch) => {
+        if (serviceDate && batch.service_date !== serviceDate) {
+            return false;
+        }
+
+        if (!driverQuery) {
+            return true;
+        }
+
+        const haystack = [
+            batch.driver_name ?? '',
+            batch.driver_external_id ?? '',
+            batch.label ?? '',
+        ].join(' ').toLowerCase();
+
+        return haystack.includes(driverQuery);
+    });
+});
+const hasBatchOptions = computed(() => filteredBatches.value.length > 0);
+const hasActiveFilters = computed(() => {
+    return filters.value.service_date !== '' || filters.value.driver_query.trim() !== '';
+});
 const journey = computed(() => comparisonData.value?.journey ?? null);
 const summary = computed(() => journey.value?.summary ?? null);
 const historicalRoute = computed(() => comparisonData.value?.historical_route ?? null);
@@ -48,6 +80,21 @@ const activeRoute = computed(() => {
     return activeView.value === 'historical'
         ? historicalRoute.value
         : suggestedRoute.value;
+});
+const activeRouteProvider = computed(() => {
+    return activeRoute.value?.provider ?? comparisonData.value?.historical_route?.provider ?? props.routing.effective_provider;
+});
+const isMockRouteActive = computed(() => activeRouteProvider.value === 'mock');
+const mapOverlayMessage = computed(() => {
+    if (mapErrorMessage.value) {
+        return mapErrorMessage.value;
+    }
+
+    if (!comparisonData.value) {
+        return 'Selecciona una jornada y ejecuta la comparación para visualizar el mapa.';
+    }
+
+    return '';
 });
 const distanceDeltaKm = computed(() => {
     if (!comparisonData.value) return null;
@@ -103,36 +150,57 @@ function markerElement(label, backgroundColor) {
     return node;
 }
 
+function supportsWebGl() {
+    const canvas = document.createElement('canvas');
+
+    return Boolean(
+        canvas.getContext('webgl') || canvas.getContext('experimental-webgl'),
+    );
+}
+
 function ensureMap(center) {
     if (map || !mapContainer.value) {
-        return;
+        return Boolean(map);
     }
 
-    map = new maplibregl.Map({
-        container: mapContainer.value,
-        style: {
-            version: 8,
-            sources: {
-                osm: {
-                    type: 'raster',
-                    tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                    tileSize: 256,
-                    attribution: '© OpenStreetMap contributors',
-                },
-            },
-            layers: [
-                {
-                    id: 'osm-raster',
-                    type: 'raster',
-                    source: 'osm',
-                },
-            ],
-        },
-        center,
-        zoom: 12,
-    });
+    if (!supportsWebGl()) {
+        mapErrorMessage.value = 'Este navegador no pudo inicializar el mapa. Puedes seguir revisando métricas y secuencias mientras habilitamos una alternativa.';
+        return false;
+    }
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    try {
+        map = new maplibregl.Map({
+            container: mapContainer.value,
+            style: {
+                version: 8,
+                sources: {
+                    osm: {
+                        type: 'raster',
+                        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                        tileSize: 256,
+                        attribution: '© OpenStreetMap contributors',
+                    },
+                },
+                layers: [
+                    {
+                        id: 'osm-raster',
+                        type: 'raster',
+                        source: 'osm',
+                    },
+                ],
+            },
+            center,
+            zoom: 12,
+        });
+
+        map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+    } catch (error) {
+        console.error(error);
+        mapErrorMessage.value = 'No fue posible inicializar el mapa en este navegador. La comparación sigue disponible en métricas y secuencias.';
+        return false;
+    }
+
+    return true;
 }
 
 function clearMarkers() {
@@ -143,10 +211,31 @@ function clearMarkers() {
     markers = [];
 }
 
+function clearMapPresentation() {
+    clearMarkers();
+
+    if (!map) {
+        return;
+    }
+
+    const routeSource = map.getSource('route-line');
+    if (routeSource) {
+        routeSource.setData({
+            type: 'Feature',
+            geometry: {
+                type: 'LineString',
+                coordinates: [],
+            },
+        });
+    }
+}
+
 function renderMap() {
     if (!activeRoute.value) {
         return;
     }
+
+    mapErrorMessage.value = '';
 
     const routeData = activeRoute.value;
     const geometry = routeData.geometry ?? [];
@@ -155,13 +244,14 @@ function renderMap() {
         ? [geometry[0].lng, geometry[0].lat]
         : [depot.lng, depot.lat];
 
-    ensureMap(center);
-    if (!map) {
+    const mapReady = ensureMap(center);
+    if (!mapReady || !map) {
         return;
     }
 
     const lineColor = activeView.value === 'historical' ? '#2563eb' : '#166534';
     const stopColor = activeView.value === 'historical' ? '#1d4ed8' : '#15803d';
+    const isMockRoute = routeData.provider === 'mock';
 
     const draw = () => {
         const routeGeoJson = {
@@ -175,6 +265,8 @@ function renderMap() {
         if (map.getSource('route-line')) {
             map.getSource('route-line').setData(routeGeoJson);
             map.setPaintProperty('route-line', 'line-color', lineColor);
+            map.setPaintProperty('route-line', 'line-opacity', isMockRoute ? 0.45 : 0.85);
+            map.setPaintProperty('route-line', 'line-dasharray', isMockRoute ? [2, 2] : [1, 0.0001]);
         } else {
             map.addSource('route-line', {
                 type: 'geojson',
@@ -187,7 +279,8 @@ function renderMap() {
                 paint: {
                     'line-color': lineColor,
                     'line-width': 4,
-                    'line-opacity': 0.85,
+                    'line-opacity': isMockRoute ? 0.45 : 0.85,
+                    'line-dasharray': isMockRoute ? [2, 2] : [1, 0.0001],
                 },
             });
         }
@@ -229,6 +322,8 @@ function renderMap() {
 async function compareJourney() {
     errorMessage.value = '';
     comparisonData.value = null;
+    mapErrorMessage.value = '';
+    clearMapPresentation();
 
     if (!form.value.route_batch_id) {
         errorMessage.value = 'Selecciona una jornada para comparar.';
@@ -251,6 +346,39 @@ async function compareJourney() {
     }
 }
 
+function clearFilters() {
+    filters.value.service_date = '';
+    filters.value.driver_query = '';
+}
+
+watch(filteredBatches, (batches) => {
+    if (!form.value.route_batch_id) {
+        return;
+    }
+
+    const selectedBatchStillVisible = batches.some((batch) => batch.id === form.value.route_batch_id);
+    if (selectedBatchStillVisible) {
+        return;
+    }
+
+    form.value.route_batch_id = null;
+    comparisonData.value = null;
+    errorMessage.value = '';
+    mapErrorMessage.value = '';
+    clearMapPresentation();
+});
+
+watch(() => form.value.route_batch_id, (newBatchId, oldBatchId) => {
+    if (newBatchId === oldBatchId) {
+        return;
+    }
+
+    comparisonData.value = null;
+    errorMessage.value = '';
+    mapErrorMessage.value = '';
+    clearMapPresentation();
+});
+
 watch(activeRoute, async (routeData) => {
     if (!routeData) {
         return;
@@ -258,12 +386,6 @@ watch(activeRoute, async (routeData) => {
 
     await nextTick();
     renderMap();
-});
-
-onMounted(() => {
-    if (form.value.route_batch_id) {
-        compareJourney();
-    }
 });
 
 onBeforeUnmount(() => {
@@ -295,8 +417,62 @@ onBeforeUnmount(() => {
                                 Proveedor configurado: {{ routing.configured_provider }} |
                                 activo: {{ routing.effective_provider }}
                             </p>
+                            <p
+                                v-if="routing.effective_provider === 'mock'"
+                                class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                            >
+                                El provider activo es `mock`. El mapa conectará puntos en orden, pero no seguirá calles reales hasta configurar un provider vial.
+                            </p>
 
                             <div class="mt-4 space-y-4">
+                                <div class="grid gap-3 sm:grid-cols-2">
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">
+                                            Fecha
+                                        </label>
+                                        <select
+                                            v-model="filters.service_date"
+                                            class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-gray-900 focus:ring-gray-900"
+                                        >
+                                            <option value="">Todas</option>
+                                            <option
+                                                v-for="serviceDate in availableDates"
+                                                :key="serviceDate"
+                                                :value="serviceDate"
+                                            >
+                                                {{ serviceDate }}
+                                            </option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-sm font-medium text-gray-700">
+                                            Conductor o cédula
+                                        </label>
+                                        <input
+                                            v-model="filters.driver_query"
+                                            type="text"
+                                            placeholder="Nombre o documento"
+                                            class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-gray-900 focus:ring-gray-900"
+                                        >
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center justify-between text-xs text-gray-500">
+                                    <span>
+                                        {{ filteredBatches.length }} jornadas visibles de {{ batches.length }}
+                                    </span>
+
+                                    <button
+                                        v-if="hasActiveFilters"
+                                        type="button"
+                                        class="font-medium text-gray-700 hover:text-gray-900"
+                                        @click="clearFilters"
+                                    >
+                                        Limpiar filtros
+                                    </button>
+                                </div>
+
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700">
                                         Jornada (conductor + fecha)
@@ -307,13 +483,19 @@ onBeforeUnmount(() => {
                                     >
                                         <option :value="null">Selecciona una jornada</option>
                                         <option
-                                            v-for="batch in batches"
+                                            v-for="batch in filteredBatches"
                                             :key="batch.id"
                                             :value="batch.id"
                                         >
-                                            {{ batch.label }}
+                                            {{ batch.label }} · {{ batch.total_stops }} paradas
                                         </option>
                                     </select>
+                                    <p
+                                        v-if="!hasBatchOptions"
+                                        class="mt-2 text-xs text-amber-700"
+                                    >
+                                        No hay jornadas disponibles con los filtros actuales.
+                                    </p>
                                 </div>
 
                                 <label class="flex items-center gap-2 text-sm text-gray-700">
@@ -327,7 +509,7 @@ onBeforeUnmount(() => {
 
                                 <button
                                     type="button"
-                                    :disabled="loading || !hasBatchOptions"
+                                    :disabled="loading || !form.route_batch_id"
                                     class="inline-flex w-full justify-center rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
                                     @click="compareJourney"
                                 >
@@ -475,7 +657,23 @@ onBeforeUnmount(() => {
                                 </div>
                             </div>
 
-                            <div ref="mapContainer" class="mt-4 h-[520px] w-full rounded-md" />
+                            <div
+                                v-if="comparisonData && isMockRouteActive"
+                                class="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+                            >
+                                Estás viendo un conector aproximado entre paradas. Sirve para comparar secuencias, no como recorrido vial final.
+                            </div>
+
+                            <div class="relative mt-4 overflow-hidden rounded-md border border-gray-200 bg-slate-50">
+                                <div ref="mapContainer" class="h-[520px] w-full" />
+
+                                <div
+                                    v-if="mapOverlayMessage"
+                                    class="absolute inset-0 flex items-center justify-center bg-white/90 p-6 text-center text-sm text-gray-600"
+                                >
+                                    <p>{{ mapOverlayMessage }}</p>
+                                </div>
+                            </div>
                         </div>
 
                         <div v-if="comparisonData" class="grid gap-4 xl:grid-cols-2">
