@@ -4,11 +4,14 @@ namespace App\Http\Controllers\Planning;
 
 use App\Domain\Planning\CreatePlanningScenarioService;
 use App\Domain\Planning\GeneratePlanningScenarioAllocationService;
+use App\Domain\Simulation\BuildSimulationRouteService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Planning\StorePlanningScenarioRequest;
 use App\Models\Depot;
 use App\Models\PlanningScenario;
+use App\Models\PlanningScenarioJourney;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -79,9 +82,12 @@ class PlanningScenarioController extends Controller
             ->with('success', 'Escenario de planillado generado y actualizado con el snapshot operativo del día.');
     }
 
-    public function show(PlanningScenario $planningScenario): Response
+    public function show(
+        PlanningScenario $planningScenario,
+        BuildSimulationRouteService $buildSimulationRouteService,
+    ): Response
     {
-        $planningScenario->load(['depot:id,code,name,address', 'creator:id,name,email']);
+        $planningScenario->load(['depot:id,code,name,address,latitude,longitude', 'creator:id,name,email']);
 
         $candidateStops = $planningScenario->stops()
             ->whereIn('status', ['pending_assignment', 'assigned', 'unassigned'])
@@ -154,40 +160,44 @@ class PlanningScenarioController extends Controller
             ->with(['driver:id,name,external_id', 'stops'])
             ->orderBy('id')
             ->get()
-            ->map(fn ($journey) => [
-                'id' => $journey->id,
-                'name' => $journey->name,
-                'status' => $journey->status,
-                'total_stops' => $journey->total_stops,
-                'total_invoices' => $journey->total_invoices,
-                'summary' => $journey->summary ?? [],
-                'route_preview' => [
-                    'provider' => data_get($journey->summary, 'provider'),
-                    'cache_hit' => (bool) data_get($journey->summary, 'cache_hit', false),
-                    'return_to_depot' => (bool) data_get($journey->summary, 'return_to_depot', true),
-                    'depot' => data_get($journey->summary, 'depot'),
-                    'geometry' => data_get($journey->summary, 'geometry', []),
-                    'bounds' => data_get($journey->summary, 'bounds'),
-                ],
-                'driver' => [
-                    'id' => $journey->driver?->id,
-                    'name' => $journey->driver?->name,
-                    'external_id' => $journey->driver?->external_id,
-                ],
-                'stops' => $journey->stops
+            ->map(function (PlanningScenarioJourney $journey) use ($planningScenario, $buildSimulationRouteService) {
+                $orderedStops = $journey->stops
                     ->sortBy('suggested_sequence')
-                    ->values()
-                    ->map(fn ($stop) => [
-                        'id' => $stop->id,
-                        'branch_code' => $stop->branch_code,
-                        'branch_name' => $stop->branch_name,
-                        'branch_address' => $stop->branch_address,
-                        'invoice_count' => $stop->invoice_count,
-                        'suggested_sequence' => $stop->suggested_sequence,
-                        'historical_sequence_min' => $stop->historical_sequence_min,
-                    ])
-                    ->all(),
-            ])
+                    ->values();
+
+                return [
+                    'id' => $journey->id,
+                    'name' => $journey->name,
+                    'status' => $journey->status,
+                    'total_stops' => $journey->total_stops,
+                    'total_invoices' => $journey->total_invoices,
+                    'summary' => $journey->summary ?? [],
+                    'route_preview' => $this->journeyRoutePreview(
+                        $planningScenario,
+                        $journey,
+                        $orderedStops,
+                        $buildSimulationRouteService,
+                    ),
+                    'driver' => [
+                        'id' => $journey->driver?->id,
+                        'name' => $journey->driver?->name,
+                        'external_id' => $journey->driver?->external_id,
+                    ],
+                    'stops' => $orderedStops
+                        ->map(fn ($stop) => [
+                            'id' => $stop->id,
+                            'branch_code' => $stop->branch_code,
+                            'branch_name' => $stop->branch_name,
+                            'branch_address' => $stop->branch_address,
+                            'invoice_count' => $stop->invoice_count,
+                            'suggested_sequence' => $stop->suggested_sequence,
+                            'historical_sequence_min' => $stop->historical_sequence_min,
+                            'latitude' => $stop->latitude !== null ? (float) $stop->latitude : null,
+                            'longitude' => $stop->longitude !== null ? (float) $stop->longitude : null,
+                        ])
+                        ->all(),
+                ];
+            })
             ->values();
 
         return Inertia::render('Planning/Show', [
@@ -228,5 +238,94 @@ class PlanningScenarioController extends Controller
         return redirect()
             ->route('planning.scenarios.show', $planningScenario)
             ->with('success', 'Se generó una propuesta base de asignación y secuenciación para el escenario.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function journeyRoutePreview(
+        PlanningScenario $planningScenario,
+        PlanningScenarioJourney $journey,
+        Collection $orderedStops,
+        BuildSimulationRouteService $buildSimulationRouteService,
+    ): array {
+        $summary = $journey->summary ?? [];
+
+        $preview = [
+            'provider' => data_get($summary, 'provider'),
+            'cache_hit' => (bool) data_get($summary, 'cache_hit', false),
+            'return_to_depot' => (bool) data_get($summary, 'return_to_depot', true),
+            'depot' => data_get($summary, 'depot'),
+            'geometry' => data_get($summary, 'geometry', []),
+            'bounds' => data_get($summary, 'bounds'),
+        ];
+
+        if ($preview['depot'] !== null && $preview['geometry'] !== []) {
+            return $preview;
+        }
+
+        $depot = $this->scenarioDepotPayload($planningScenario);
+        if ($depot === null) {
+            return $preview;
+        }
+
+        $routeStops = $orderedStops
+            ->filter(fn ($stop) => $stop->latitude !== null && $stop->longitude !== null)
+            ->map(fn ($stop) => [
+                'planning_scenario_stop_id' => $stop->id,
+                'branch_id' => $stop->branch_id,
+                'branch_code' => $stop->branch_code,
+                'branch_name' => $stop->branch_name,
+                'branch_address' => $stop->branch_address,
+                'invoice_count' => (int) $stop->invoice_count,
+                'historical_sequence' => $stop->historical_sequence_min,
+                'lat' => (float) $stop->latitude,
+                'lng' => (float) $stop->longitude,
+            ])
+            ->values()
+            ->all();
+
+        if ($routeStops === []) {
+            return $preview;
+        }
+
+        $fallbackPreview = $buildSimulationRouteService->buildPreviewFromDepot(
+            $depot,
+            $routeStops,
+            $preview['return_to_depot'],
+            metadata: [
+                'label' => 'Propuesta base',
+                'source' => 'planning_show_fallback',
+            ],
+        );
+
+        return [
+            'provider' => $fallbackPreview['provider'],
+            'cache_hit' => $fallbackPreview['cache_hit'],
+            'return_to_depot' => $fallbackPreview['return_to_depot'],
+            'depot' => $fallbackPreview['depot'],
+            'geometry' => $fallbackPreview['geometry'],
+            'bounds' => $fallbackPreview['bounds'],
+        ];
+    }
+
+    /**
+     * @return array{lat: float, lng: float, name: string, code: string|null, address: string|null, source: string}|null
+     */
+    private function scenarioDepotPayload(PlanningScenario $planningScenario): ?array
+    {
+        $depot = $planningScenario->depot;
+        if ($depot === null || $depot->latitude === null || $depot->longitude === null) {
+            return null;
+        }
+
+        return [
+            'lat' => (float) $depot->latitude,
+            'lng' => (float) $depot->longitude,
+            'name' => $depot->name,
+            'code' => $depot->code,
+            'address' => $depot->address,
+            'source' => 'planning_scenario_depot',
+        ];
     }
 }
