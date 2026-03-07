@@ -320,6 +320,87 @@ function clearMapPresentation() {
             },
         });
     }
+
+    const selectedStopSource = map.getSource('selected-stop');
+    if (selectedStopSource) {
+        selectedStopSource.setData({
+            type: 'FeatureCollection',
+            features: [],
+        });
+    }
+}
+
+function selectedStopFeature(routeData) {
+    if (!routeData || selectedStop.value?.routeView !== activeView.value) {
+        return {
+            type: 'FeatureCollection',
+            features: [],
+        };
+    }
+
+    const stop = routeData.stops.find((candidate) => candidate.stop_key === selectedStop.value.stopKey);
+
+    if (!stop) {
+        return {
+            type: 'FeatureCollection',
+            features: [],
+        };
+    }
+
+    return {
+        type: 'FeatureCollection',
+        features: [{
+            type: 'Feature',
+            geometry: {
+                type: 'Point',
+                coordinates: [stop.lng, stop.lat],
+            },
+        }],
+    };
+}
+
+function updateSelectedStopOverlay(routeData, lineColor) {
+    if (!map) {
+        return;
+    }
+
+    const selectedStopGeoJson = selectedStopFeature(routeData);
+
+    if (map.getSource('selected-stop')) {
+        map.getSource('selected-stop').setData(selectedStopGeoJson);
+        map.setPaintProperty('selected-stop-halo', 'circle-color', lineColor);
+        map.setPaintProperty('selected-stop-core', 'circle-stroke-color', lineColor);
+        return;
+    }
+
+    map.addSource('selected-stop', {
+        type: 'geojson',
+        data: selectedStopGeoJson,
+    });
+
+    map.addLayer({
+        id: 'selected-stop-halo',
+        type: 'circle',
+        source: 'selected-stop',
+        paint: {
+            'circle-radius': 22,
+            'circle-color': lineColor,
+            'circle-opacity': 0.16,
+        },
+    });
+
+    map.addLayer({
+        id: 'selected-stop-core',
+        type: 'circle',
+        source: 'selected-stop',
+        paint: {
+            'circle-radius': 11,
+            'circle-color': '#ffffff',
+            'circle-stroke-width': 4,
+            'circle-stroke-color': lineColor,
+            'circle-opacity': 0.95,
+        },
+    });
 }
 
 function renderMap() {
@@ -430,6 +511,7 @@ function renderMap() {
         }
 
         applySelectedMarkerState();
+        updateSelectedStopOverlay(routeData, lineColor);
 
         if (selectedStop.value?.routeView === activeView.value) {
             const selectedEntry = markerLookup.get(selectedStop.value.stopKey);
@@ -563,6 +645,7 @@ watch(() => form.value.route_batch_id, (newBatchId, oldBatchId) => {
 
 watch(selectedStop, () => {
     applySelectedMarkerState();
+    updateSelectedStopOverlay(activeRoute.value, activeView.value === 'historical' ? '#2563eb' : '#166534');
 
     if (selectedStop.value?.routeView === activeView.value) {
         openStopPopup(selectedStop.value.stopKey, { flyTo: false });
