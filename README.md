@@ -98,6 +98,17 @@ Salida local:
 - `docs/generated/branches_seed.csv`
 - `docs/generated/invoices_import.csv`
 
+Carga reproducible de demo local:
+
+```bash
+./vendor/bin/sail artisan demo:load-generated-data
+```
+
+Notas:
+- el comando hace `upsert` de `branches` y `depots`
+- importa `drivers` e `invoices` usando el flujo real de `CsvIngestionService`
+- las facturas se cargan por chunks para evitar el límite de locks de PostgreSQL en un solo transaction batch
+
 ## Configuración de ruteo
 
 Variables relevantes en `.env`:

@@ -436,7 +436,14 @@ function normalizeDecimal(mixed $value): string
 {
     $value = trim((string) $value);
 
-    return $value === '' ? '' : $value;
+    if ($value === '') {
+        return '';
+    }
+
+    $value = str_replace(["\xc2\xa0", ' '], '', $value);
+    $value = str_replace(',', '.', $value);
+
+    return is_numeric($value) ? $value : '';
 }
 
 /**
