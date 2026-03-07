@@ -40,6 +40,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/dashboard/simulate', [SimulationController::class, 'index'])->name('simulation.run');
     Route::post('/dashboard/simulate/preview', [SimulationController::class, 'preview'])->name('simulation.preview');
+    Route::post('/dashboard/simulate/compare', [SimulationController::class, 'compare'])->name('simulation.compare');
 });
 
 Route::middleware('auth')->group(function () {
