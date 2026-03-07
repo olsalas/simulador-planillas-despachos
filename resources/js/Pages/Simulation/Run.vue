@@ -225,10 +225,11 @@ function isStopSelected(routeView, stopKey) {
 }
 
 function setMarkerSelectedState(entry, isSelected) {
-    entry.element.style.transform = isSelected ? 'scale(1.18)' : 'scale(1)';
     entry.element.style.boxShadow = isSelected
         ? '0 0 0 4px rgba(59, 130, 246, 0.18), 0 4px 10px rgba(15, 23, 42, 0.35)'
         : '0 1px 4px rgba(0,0,0,0.35)';
+    entry.element.style.borderColor = isSelected ? '#dbeafe' : '#ffffff';
+    entry.element.style.borderWidth = isSelected ? '3px' : '2px';
     entry.element.style.zIndex = isSelected ? '10' : '1';
 }
 
