@@ -445,6 +445,8 @@ class PlanningScenarioTest extends TestCase
         $this->assertSame(2, $journeys[0]->total_stops);
         $this->assertSame('mock', $journeys[0]->summary['provider']);
         $this->assertGreaterThan(0, $journeys[0]->summary['distance_meters']);
+        $this->assertNotEmpty($journeys[0]->summary['geometry']);
+        $this->assertSame('planning_scenario_depot', $journeys[0]->summary['depot']['source']);
 
         $this->actingAs($user)
             ->get(route('planning.scenarios.show', $scenario))
@@ -454,6 +456,8 @@ class PlanningScenarioTest extends TestCase
                 ->where('scenario.status', 'allocation_ready')
                 ->where('scenario.summary.proposed_journeys', 2)
                 ->has('proposedJourneys', 2)
+                ->where('proposedJourneys.0.route_preview.provider', 'mock')
+                ->where('proposedJourneys.0.route_preview.depot.source', 'planning_scenario_depot')
                 ->has('candidateStops', 4)
                 ->has('unassignedStops', 0)
             );
