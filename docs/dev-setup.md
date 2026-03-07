@@ -61,6 +61,25 @@ Build de assets:
 ./vendor/bin/sail npm run build
 ```
 
+### 5) Elegir modo de trabajo frontend
+
+Modo de edición frontend:
+
+```bash
+./vendor/bin/sail npm run dev
+```
+
+Usa este modo cuando estés tocando Vue, CSS o UX y necesites HMR.
+
+Modo rápido para navegar y validar flujos:
+
+```bash
+./vendor/bin/sail npm run build
+rm -f public/hot
+```
+
+Usa este modo cuando no estés editando frontend activamente. En Windows + WSL suele sentirse bastante más rápido porque el navegador deja de depender del Vite dev server y de cientos de módulos servidos en caliente.
+
 ## Opción B: local sin Docker
 
 Esta opción usa SQLite por defecto (`.env.example` ya viene preparado para eso).
