@@ -7,48 +7,39 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class PlanningScenario extends Model
+class PlanningScenarioJourney extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'depot_id',
-        'created_by',
-        'service_date',
+        'planning_scenario_id',
+        'driver_id',
         'name',
         'status',
-        'configuration',
+        'total_stops',
+        'total_invoices',
         'summary',
-        'last_generated_at',
     ];
 
     protected function casts(): array
     {
         return [
-            'service_date' => 'date',
-            'configuration' => 'array',
             'summary' => 'array',
-            'last_generated_at' => 'datetime',
         ];
     }
 
-    public function depot(): BelongsTo
+    public function planningScenario(): BelongsTo
     {
-        return $this->belongsTo(Depot::class);
+        return $this->belongsTo(PlanningScenario::class);
     }
 
-    public function creator(): BelongsTo
+    public function driver(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'created_by');
+        return $this->belongsTo(Driver::class);
     }
 
     public function stops(): HasMany
     {
         return $this->hasMany(PlanningScenarioStop::class);
-    }
-
-    public function journeys(): HasMany
-    {
-        return $this->hasMany(PlanningScenarioJourney::class);
     }
 }

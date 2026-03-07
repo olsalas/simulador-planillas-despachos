@@ -12,6 +12,10 @@ class PlanningScenarioStop extends Model
 
     protected $fillable = [
         'planning_scenario_id',
+        'planning_scenario_journey_id',
+        'assigned_driver_id',
+        'suggested_sequence',
+        'assignment_reason',
         'branch_id',
         'stop_key',
         'status',
@@ -40,8 +44,18 @@ class PlanningScenarioStop extends Model
         return $this->belongsTo(PlanningScenario::class);
     }
 
+    public function planningScenarioJourney(): BelongsTo
+    {
+        return $this->belongsTo(PlanningScenarioJourney::class);
+    }
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function assignedDriver(): BelongsTo
+    {
+        return $this->belongsTo(Driver::class, 'assigned_driver_id');
     }
 }

@@ -84,6 +84,32 @@ class BuildSimulationRouteService
         $routeBatch->loadMissing('driver.depot');
 
         $depot = $this->resolveDepotForStops($routeBatch, $orderedStops);
+        return $this->buildPreviewFromDepot(
+            $depot,
+            $orderedStops,
+            $returnToDepot,
+            $excludedStops,
+            [
+                'route_batch_id' => $routeBatch->id,
+                ...$metadata,
+            ],
+        );
+    }
+
+    /**
+     * @param  array{lat: float, lng: float, name: string, code: string|null, address: string|null, source: string}  $depot
+     * @param  list<array<string, mixed>>  $orderedStops
+     * @param  list<array<string, mixed>>  $excludedStops
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, mixed>
+     */
+    public function buildPreviewFromDepot(
+        array $depot,
+        array $orderedStops,
+        bool $returnToDepot = true,
+        array $excludedStops = [],
+        array $metadata = [],
+    ): array {
         $waypoints = $this->buildWaypoints($depot, $orderedStops, $returnToDepot);
 
         [$route, $effectiveProvider, $cacheHit] = $this->routeWithCache($waypoints, $returnToDepot);
@@ -97,7 +123,6 @@ class BuildSimulationRouteService
         }
 
         return [
-            'route_batch_id' => $routeBatch->id,
             'provider' => $effectiveProvider,
             'cache_hit' => $cacheHit,
             'return_to_depot' => $returnToDepot,

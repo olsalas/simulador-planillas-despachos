@@ -1,13 +1,13 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, useForm } from '@inertiajs/vue3';
 
-defineProps({
+const props = defineProps({
     scenario: {
         type: Object,
         required: true,
     },
-    eligibleStops: {
+    candidateStops: {
         type: Array,
         required: true,
     },
@@ -15,11 +15,25 @@ defineProps({
         type: Array,
         required: true,
     },
+    unassignedStops: {
+        type: Array,
+        required: true,
+    },
     drivers: {
         type: Array,
         required: true,
     },
+    proposedJourneys: {
+        type: Array,
+        required: true,
+    },
 });
+
+const allocationForm = useForm({});
+
+function generateAllocation() {
+    allocationForm.post(route('planning.scenarios.allocate', props.scenario.id));
+}
 
 function summaryValue(summary, key) {
     return summary?.[key] ?? 0;
@@ -66,6 +80,14 @@ function configLabel(key, value) {
                 </div>
 
                 <div class="flex flex-wrap gap-3">
+                    <button
+                        type="button"
+                        class="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-sky-300"
+                        :disabled="allocationForm.processing || candidateStops.length === 0"
+                        @click="generateAllocation"
+                    >
+                        {{ allocationForm.processing ? 'Generando propuesta...' : 'Generar propuesta base' }}
+                    </button>
                     <Link
                         :href="route('planning.scenarios.index')"
                         class="inline-flex items-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -109,6 +131,18 @@ function configLabel(key, value) {
                             {{ summaryValue(scenario.summary, 'active_drivers_in_depot') }}
                         </p>
                     </div>
+                    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                        <p class="text-sm text-gray-500">Jornadas propuestas</p>
+                        <p class="mt-2 text-3xl font-semibold text-gray-900">
+                            {{ summaryValue(scenario.summary, 'proposed_journeys') }}
+                        </p>
+                    </div>
+                    <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                        <p class="text-sm text-gray-500">No asignadas</p>
+                        <p class="mt-2 text-3xl font-semibold text-gray-900">
+                            {{ summaryValue(scenario.summary, 'unassigned_stops') }}
+                        </p>
+                    </div>
                 </section>
 
                 <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
@@ -148,8 +182,8 @@ function configLabel(key, value) {
                         </dl>
 
                         <div class="mt-6 rounded-xl bg-sky-50 p-4 text-sm text-sky-900">
-                            Este escenario todavia no distribuye las paradas entre conductores. La siguiente fase consumira este snapshot
-                            para asignar, secuenciar y comparar escenarios de planillado real.
+                            El escenario queda listo para generar una propuesta base usando un barrido angular desde el depot y secuenciacion
+                            vial por vecino mas cercano. Es una primera heuristica explicable, no el optimizador final.
                         </div>
                     </div>
 
@@ -192,21 +226,108 @@ function configLabel(key, value) {
                     </div>
                 </section>
 
+                <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">Jornadas propuestas</h3>
+                            <p class="mt-1 text-sm text-gray-600">
+                                Resultado base de asignacion por depot. Cada jornada queda asociada a un conductor activo y ya trae su secuencia sugerida.
+                            </p>
+                        </div>
+                        <span class="rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">
+                            {{ proposedJourneys.length }} jornadas
+                        </span>
+                    </div>
+
+                    <div v-if="proposedJourneys.length === 0" class="mt-6 rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-500">
+                        Aun no hay propuesta generada. Usa el boton superior para distribuir las paradas candidatas entre los conductores activos del depot.
+                    </div>
+
+                    <div v-else class="mt-6 grid gap-4 xl:grid-cols-2">
+                        <article
+                            v-for="journey in proposedJourneys"
+                            :key="journey.id"
+                            class="rounded-2xl border border-gray-200 bg-gray-50 p-5"
+                        >
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <p class="text-xs font-semibold uppercase tracking-[0.22em] text-sky-600">
+                                        {{ journey.driver.external_id ?? 'Sin external_id' }}
+                                    </p>
+                                    <h4 class="mt-2 text-base font-semibold text-gray-900">
+                                        {{ journey.driver.name }}
+                                    </h4>
+                                    <p class="mt-1 text-sm text-gray-600">{{ journey.name }}</p>
+                                </div>
+                                <span class="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-gray-700 shadow-sm">
+                                    {{ journey.status }}
+                                </span>
+                            </div>
+
+                            <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+                                <div class="rounded-xl bg-white p-3">
+                                    <dt class="text-gray-500">Paradas</dt>
+                                    <dd class="mt-1 text-lg font-semibold text-gray-900">{{ journey.total_stops }}</dd>
+                                </div>
+                                <div class="rounded-xl bg-white p-3">
+                                    <dt class="text-gray-500">Facturas</dt>
+                                    <dd class="mt-1 text-lg font-semibold text-gray-900">{{ journey.total_invoices }}</dd>
+                                </div>
+                                <div class="rounded-xl bg-white p-3">
+                                    <dt class="text-gray-500">Distancia</dt>
+                                    <dd class="mt-1 text-lg font-semibold text-gray-900">
+                                        {{ (summaryValue(journey.summary, 'distance_meters') / 1000).toFixed(2) }} km
+                                    </dd>
+                                </div>
+                                <div class="rounded-xl bg-white p-3">
+                                    <dt class="text-gray-500">Duracion</dt>
+                                    <dd class="mt-1 text-lg font-semibold text-gray-900">
+                                        {{ (summaryValue(journey.summary, 'duration_seconds') / 60).toFixed(1) }} min
+                                    </dd>
+                                </div>
+                            </dl>
+
+                            <ol class="mt-4 space-y-2">
+                                <li
+                                    v-for="stop in journey.stops"
+                                    :key="stop.id"
+                                    class="rounded-xl bg-white px-4 py-3 text-sm"
+                                >
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p class="font-medium text-gray-900">
+                                                {{ stop.suggested_sequence }}. {{ stop.branch_code }} · {{ stop.branch_name }}
+                                            </p>
+                                            <p class="text-xs text-gray-500">{{ stop.branch_address }}</p>
+                                        </div>
+                                        <div class="text-right">
+                                            <p class="font-semibold text-gray-800">{{ stop.invoice_count }} facturas</p>
+                                            <p class="text-xs text-gray-500">
+                                                Hist. min {{ stop.historical_sequence_min ?? 'n/a' }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </li>
+                            </ol>
+                        </article>
+                    </div>
+                </section>
+
                 <section class="grid gap-6 xl:grid-cols-2">
                     <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                         <div class="flex items-center justify-between gap-3">
                             <div>
-                                <h3 class="text-lg font-semibold text-gray-900">Paradas elegibles</h3>
+                                <h3 class="text-lg font-semibold text-gray-900">Paradas candidatas</h3>
                                 <p class="mt-1 text-sm text-gray-600">
-                                    Snapshot listo para entrar al motor de asignacion.
+                                    Vista base del snapshot persistido. Aqui se ven todas las paradas operables, asignadas o aun pendientes.
                                 </p>
                             </div>
                             <span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                                {{ eligibleStops.length }} paradas
+                                {{ candidateStops.length }} paradas
                             </span>
                         </div>
 
-                        <div v-if="eligibleStops.length === 0" class="mt-6 rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-500">
+                        <div v-if="candidateStops.length === 0" class="mt-6 rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-500">
                             No hubo paradas elegibles con geocodigo suficiente.
                         </div>
 
@@ -217,10 +338,11 @@ function configLabel(key, value) {
                                         <th class="px-4 py-3 text-left font-semibold text-gray-600">Sucursal</th>
                                         <th class="px-4 py-3 text-left font-semibold text-gray-600">Facturas</th>
                                         <th class="px-4 py-3 text-left font-semibold text-gray-600">Hist. min</th>
+                                        <th class="px-4 py-3 text-left font-semibold text-gray-600">Estado</th>
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100 bg-white">
-                                    <tr v-for="stop in eligibleStops" :key="stop.id">
+                                    <tr v-for="stop in candidateStops" :key="stop.id">
                                         <td class="px-4 py-3">
                                             <p class="font-medium text-gray-900">
                                                 {{ stop.branch_code }} · {{ stop.branch_name }}
@@ -231,6 +353,18 @@ function configLabel(key, value) {
                                         <td class="px-4 py-3 text-gray-700">
                                             {{ stop.historical_sequence_min ?? 'n/a' }}
                                         </td>
+                                        <td class="px-4 py-3">
+                                            <span
+                                                class="rounded-full px-2.5 py-1 text-[11px] font-semibold"
+                                                :class="stop.status === 'assigned'
+                                                    ? 'bg-sky-100 text-sky-700'
+                                                    : stop.status === 'unassigned'
+                                                        ? 'bg-amber-100 text-amber-700'
+                                                        : 'bg-emerald-100 text-emerald-700'"
+                                            >
+                                                {{ stop.status }}
+                                            </span>
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -240,18 +374,18 @@ function configLabel(key, value) {
                     <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                         <div class="flex items-center justify-between gap-3">
                             <div>
-                                <h3 class="text-lg font-semibold text-gray-900">Excluidas</h3>
+                                <h3 class="text-lg font-semibold text-gray-900">No asignadas</h3>
                                 <p class="mt-1 text-sm text-gray-600">
-                                    Casos que requieren mejor calidad de datos antes de entrar al planillado.
+                                    Paradas operables que la heuristica actual no logro ubicar por limite o falta de capacidad disponible.
                                 </p>
                             </div>
                             <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                                {{ excludedStops.length }} excluidas
+                                {{ unassignedStops.length }} no asignadas
                             </span>
                         </div>
 
-                        <div v-if="excludedStops.length === 0" class="mt-6 rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-500">
-                            No hay exclusiones para este escenario.
+                        <div v-if="unassignedStops.length === 0" class="mt-6 rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-500">
+                            No hay paradas operables sin asignar en la propuesta actual.
                         </div>
 
                         <div v-else class="mt-6 overflow-hidden rounded-xl border border-gray-200">
@@ -264,7 +398,7 @@ function configLabel(key, value) {
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-gray-100 bg-white">
-                                    <tr v-for="stop in excludedStops" :key="stop.id">
+                                    <tr v-for="stop in unassignedStops" :key="stop.id">
                                         <td class="px-4 py-3">
                                             <p class="font-medium text-gray-900">
                                                 {{ stop.branch_code ? `${stop.branch_code} · ${stop.branch_name}` : stop.branch_name }}
@@ -277,6 +411,48 @@ function configLabel(key, value) {
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                </section>
+
+                <section class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-lg font-semibold text-gray-900">Excluidas por calidad de datos</h3>
+                            <p class="mt-1 text-sm text-gray-600">
+                                Estas no entran al algoritmo porque faltan datos base para planillarlas con confianza.
+                            </p>
+                        </div>
+                        <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+                            {{ excludedStops.length }} excluidas
+                        </span>
+                    </div>
+
+                    <div v-if="excludedStops.length === 0" class="mt-6 rounded-xl border border-dashed border-gray-300 p-5 text-sm text-gray-500">
+                        No hay exclusiones por calidad de datos en este escenario.
+                    </div>
+
+                    <div v-else class="mt-6 overflow-hidden rounded-xl border border-gray-200">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left font-semibold text-gray-600">Punto</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-gray-600">Facturas</th>
+                                    <th class="px-4 py-3 text-left font-semibold text-gray-600">Motivo</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100 bg-white">
+                                <tr v-for="stop in excludedStops" :key="stop.id">
+                                    <td class="px-4 py-3">
+                                        <p class="font-medium text-gray-900">
+                                            {{ stop.branch_code ? `${stop.branch_code} · ${stop.branch_name}` : stop.branch_name }}
+                                        </p>
+                                        <p v-if="stop.branch_address" class="text-xs text-gray-500">{{ stop.branch_address }}</p>
+                                    </td>
+                                    <td class="px-4 py-3 text-gray-700">{{ stop.invoice_count }}</td>
+                                    <td class="px-4 py-3 text-gray-700">{{ stop.reason }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </section>
             </div>

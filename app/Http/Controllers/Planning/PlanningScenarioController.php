@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Planning;
 
 use App\Domain\Planning\CreatePlanningScenarioService;
+use App\Domain\Planning\GeneratePlanningScenarioAllocationService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Planning\StorePlanningScenarioRequest;
 use App\Models\Depot;
@@ -82,8 +83,8 @@ class PlanningScenarioController extends Controller
     {
         $planningScenario->load(['depot:id,code,name,address', 'creator:id,name,email']);
 
-        $eligibleStops = $planningScenario->stops()
-            ->where('status', 'pending_assignment')
+        $candidateStops = $planningScenario->stops()
+            ->whereIn('status', ['pending_assignment', 'assigned', 'unassigned'])
             ->orderByDesc('invoice_count')
             ->orderBy('branch_name')
             ->get()
@@ -97,6 +98,9 @@ class PlanningScenarioController extends Controller
                 'historical_sequence_min' => $stop->historical_sequence_min,
                 'latitude' => $stop->latitude,
                 'longitude' => $stop->longitude,
+                'status' => $stop->status,
+                'suggested_sequence' => $stop->suggested_sequence,
+                'assignment_reason' => $stop->assignment_reason,
             ])
             ->values();
 
@@ -116,6 +120,22 @@ class PlanningScenarioController extends Controller
             ])
             ->values();
 
+        $unassignedStops = $planningScenario->stops()
+            ->where('status', 'unassigned')
+            ->orderByDesc('invoice_count')
+            ->orderBy('branch_name')
+            ->get()
+            ->map(fn ($stop) => [
+                'id' => $stop->id,
+                'stop_key' => $stop->stop_key,
+                'branch_code' => $stop->branch_code,
+                'branch_name' => $stop->branch_name,
+                'branch_address' => $stop->branch_address,
+                'invoice_count' => $stop->invoice_count,
+                'reason' => $stop->assignment_reason,
+            ])
+            ->values();
+
         $drivers = $planningScenario->depot
             ? $planningScenario->depot->drivers()
                 ->orderByDesc('is_active')
@@ -129,6 +149,38 @@ class PlanningScenarioController extends Controller
                 ])
                 ->values()
             : collect();
+
+        $proposedJourneys = $planningScenario->journeys()
+            ->with(['driver:id,name,external_id', 'stops'])
+            ->orderBy('id')
+            ->get()
+            ->map(fn ($journey) => [
+                'id' => $journey->id,
+                'name' => $journey->name,
+                'status' => $journey->status,
+                'total_stops' => $journey->total_stops,
+                'total_invoices' => $journey->total_invoices,
+                'summary' => $journey->summary ?? [],
+                'driver' => [
+                    'id' => $journey->driver?->id,
+                    'name' => $journey->driver?->name,
+                    'external_id' => $journey->driver?->external_id,
+                ],
+                'stops' => $journey->stops
+                    ->sortBy('suggested_sequence')
+                    ->values()
+                    ->map(fn ($stop) => [
+                        'id' => $stop->id,
+                        'branch_code' => $stop->branch_code,
+                        'branch_name' => $stop->branch_name,
+                        'branch_address' => $stop->branch_address,
+                        'invoice_count' => $stop->invoice_count,
+                        'suggested_sequence' => $stop->suggested_sequence,
+                        'historical_sequence_min' => $stop->historical_sequence_min,
+                    ])
+                    ->all(),
+            ])
+            ->values();
 
         return Inertia::render('Planning/Show', [
             'scenario' => [
@@ -151,9 +203,22 @@ class PlanningScenarioController extends Controller
                     'email' => $planningScenario->creator?->email,
                 ],
             ],
-            'eligibleStops' => $eligibleStops,
+            'candidateStops' => $candidateStops,
             'excludedStops' => $excludedStops,
+            'unassignedStops' => $unassignedStops,
             'drivers' => $drivers,
+            'proposedJourneys' => $proposedJourneys,
         ]);
+    }
+
+    public function allocate(
+        PlanningScenario $planningScenario,
+        GeneratePlanningScenarioAllocationService $generatePlanningScenarioAllocationService,
+    ): RedirectResponse {
+        $generatePlanningScenarioAllocationService->generate($planningScenario);
+
+        return redirect()
+            ->route('planning.scenarios.show', $planningScenario)
+            ->with('success', 'Se generó una propuesta base de asignación y secuenciación para el escenario.');
     }
 }
