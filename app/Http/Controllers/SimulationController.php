@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Contracts\RoutingProvider;
+use App\Domain\Simulation\BuildJourneyComparisonService;
 use App\Domain\Simulation\BuildSimulationRouteService;
+use App\Http\Requests\Simulation\CompareJourneyRequest;
 use App\Http\Requests\Simulation\PreviewRouteRequest;
 use App\Models\RouteBatch;
 use Illuminate\Http\JsonResponse;
@@ -61,5 +63,21 @@ class SimulationController extends Controller
         );
 
         return response()->json($routePreview);
+    }
+
+    public function compare(
+        CompareJourneyRequest $request,
+        BuildJourneyComparisonService $buildJourneyComparisonService
+    ): JsonResponse {
+        $routeBatch = RouteBatch::query()
+            ->with('driver.depot')
+            ->findOrFail($request->integer('route_batch_id'));
+
+        $comparison = $buildJourneyComparisonService->buildForBatch(
+            $routeBatch,
+            $request->boolean('return_to_depot', true),
+        );
+
+        return response()->json($comparison);
     }
 }

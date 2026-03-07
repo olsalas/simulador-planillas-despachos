@@ -3,7 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import maplibregl from 'maplibre-gl';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const props = defineProps({
@@ -28,21 +28,61 @@ const form = ref({
 
 const loading = ref(false);
 const errorMessage = ref('');
-const routePreview = ref(null);
+const comparisonData = ref(null);
+const activeView = ref('historical');
 const mapContainer = ref(null);
 
 let map = null;
 let markers = [];
 
 const hasBatchOptions = computed(() => props.batches.length > 0);
-const distanceKm = computed(() => {
-    if (!routePreview.value) return null;
-    return (routePreview.value.metrics.distance_meters / 1000).toFixed(2);
+const journey = computed(() => comparisonData.value?.journey ?? null);
+const summary = computed(() => journey.value?.summary ?? null);
+const historicalRoute = computed(() => comparisonData.value?.historical_route ?? null);
+const suggestedRoute = computed(() => comparisonData.value?.suggested_route ?? null);
+const activeRoute = computed(() => {
+    if (!comparisonData.value) {
+        return null;
+    }
+
+    return activeView.value === 'historical'
+        ? historicalRoute.value
+        : suggestedRoute.value;
 });
-const durationMin = computed(() => {
-    if (!routePreview.value) return null;
-    return (routePreview.value.metrics.duration_seconds / 60).toFixed(1);
+const distanceDeltaKm = computed(() => {
+    if (!comparisonData.value) return null;
+
+    return (comparisonData.value.delta.distance_meters / 1000).toFixed(2);
 });
+const durationDeltaMin = computed(() => {
+    if (!comparisonData.value) return null;
+
+    return (comparisonData.value.delta.duration_seconds / 60).toFixed(1);
+});
+const deltaLabel = computed(() => {
+    if (!comparisonData.value) return '';
+
+    const distanceDelta = comparisonData.value.delta.distance_meters;
+    const durationDelta = comparisonData.value.delta.duration_seconds;
+
+    if (distanceDelta < 0 || durationDelta < 0) {
+        return 'Sugerido vs histórico';
+    }
+
+    return 'Diferencia vs histórico';
+});
+
+function routeDistanceKm(routeData) {
+    if (!routeData) return '0.00';
+
+    return (routeData.metrics.distance_meters / 1000).toFixed(2);
+}
+
+function routeDurationMin(routeData) {
+    if (!routeData) return '0.0';
+
+    return (routeData.metrics.duration_seconds / 60).toFixed(1);
+}
 
 function markerElement(label, backgroundColor) {
     const node = document.createElement('div');
@@ -104,12 +144,13 @@ function clearMarkers() {
 }
 
 function renderMap() {
-    if (!routePreview.value) {
+    if (!activeRoute.value) {
         return;
     }
 
-    const geometry = routePreview.value.geometry ?? [];
-    const depot = routePreview.value.depot;
+    const routeData = activeRoute.value;
+    const geometry = routeData.geometry ?? [];
+    const depot = routeData.depot;
     const center = geometry.length > 0
         ? [geometry[0].lng, geometry[0].lat]
         : [depot.lng, depot.lat];
@@ -118,6 +159,9 @@ function renderMap() {
     if (!map) {
         return;
     }
+
+    const lineColor = activeView.value === 'historical' ? '#2563eb' : '#166534';
+    const stopColor = activeView.value === 'historical' ? '#1d4ed8' : '#15803d';
 
     const draw = () => {
         const routeGeoJson = {
@@ -130,6 +174,7 @@ function renderMap() {
 
         if (map.getSource('route-line')) {
             map.getSource('route-line').setData(routeGeoJson);
+            map.setPaintProperty('route-line', 'line-color', lineColor);
         } else {
             map.addSource('route-line', {
                 type: 'geojson',
@@ -140,7 +185,7 @@ function renderMap() {
                 type: 'line',
                 source: 'route-line',
                 paint: {
-                    'line-color': '#0f172a',
+                    'line-color': lineColor,
                     'line-width': 4,
                     'line-opacity': 0.85,
                 },
@@ -150,13 +195,13 @@ function renderMap() {
         clearMarkers();
 
         const depotMarker = new maplibregl.Marker({
-            element: markerElement('D', '#1d4ed8'),
+            element: markerElement('D', '#0f172a'),
         }).setLngLat([depot.lng, depot.lat]).addTo(map);
         markers.push(depotMarker);
 
-        for (const stop of routePreview.value.stops) {
+        for (const stop of routeData.stops) {
             const stopMarker = new maplibregl.Marker({
-                element: markerElement(String(stop.sequence), '#111827'),
+                element: markerElement(String(stop.sequence), stopColor),
             }).setLngLat([stop.lng, stop.lat]).addTo(map);
             markers.push(stopMarker);
         }
@@ -181,33 +226,43 @@ function renderMap() {
     map.once('load', draw);
 }
 
-async function previewRoute() {
+async function compareJourney() {
     errorMessage.value = '';
-    routePreview.value = null;
+    comparisonData.value = null;
 
     if (!form.value.route_batch_id) {
-        errorMessage.value = 'Selecciona un batch para simular.';
+        errorMessage.value = 'Selecciona una jornada para comparar.';
         return;
     }
 
     loading.value = true;
 
     try {
-        const response = await axios.post(route('simulation.preview'), form.value);
-        routePreview.value = response.data;
+        const response = await axios.post(route('simulation.compare'), form.value);
+        comparisonData.value = response.data;
+        activeView.value = 'historical';
         await nextTick();
         renderMap();
     } catch (error) {
         const backendMessage = error?.response?.data?.message;
-        errorMessage.value = backendMessage || 'No se pudo generar la ruta del batch.';
+        errorMessage.value = backendMessage || 'No se pudo comparar la jornada.';
     } finally {
         loading.value = false;
     }
 }
 
+watch(activeRoute, async (routeData) => {
+    if (!routeData) {
+        return;
+    }
+
+    await nextTick();
+    renderMap();
+});
+
 onMounted(() => {
     if (form.value.route_batch_id) {
-        previewRoute();
+        compareJourney();
     }
 });
 
@@ -221,111 +276,304 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-    <Head title="Simular" />
+    <Head title="Comparar Planillado" />
 
     <AuthenticatedLayout>
         <template #header>
             <h2 class="text-xl font-semibold leading-tight text-gray-800">
-                Simular (conductor + día)
+                Comparar planillado (conductor + día)
             </h2>
         </template>
 
         <div class="py-10">
             <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div class="grid gap-4 lg:grid-cols-3">
-                    <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm lg:col-span-1">
-                        <h3 class="text-base font-semibold text-gray-900">Parámetros</h3>
-                        <p class="mt-1 text-xs text-gray-500">
-                            Proveedor configurado: {{ routing.configured_provider }} |
-                            activo: {{ routing.effective_provider }}
-                        </p>
+                <div class="grid gap-4 xl:grid-cols-[360px,1fr]">
+                    <div class="space-y-4">
+                        <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                            <h3 class="text-base font-semibold text-gray-900">Parámetros</h3>
+                            <p class="mt-1 text-xs text-gray-500">
+                                Proveedor configurado: {{ routing.configured_provider }} |
+                                activo: {{ routing.effective_provider }}
+                            </p>
 
-                        <div class="mt-4 space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">
-                                    Batch (conductor + fecha)
-                                </label>
-                                <select
-                                    v-model.number="form.route_batch_id"
-                                    class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-gray-900 focus:ring-gray-900"
-                                >
-                                    <option :value="null">Selecciona un batch</option>
-                                    <option
-                                        v-for="batch in batches"
-                                        :key="batch.id"
-                                        :value="batch.id"
+                            <div class="mt-4 space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700">
+                                        Jornada (conductor + fecha)
+                                    </label>
+                                    <select
+                                        v-model.number="form.route_batch_id"
+                                        class="mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-gray-900 focus:ring-gray-900"
                                     >
-                                        {{ batch.label }}
-                                    </option>
-                                </select>
+                                        <option :value="null">Selecciona una jornada</option>
+                                        <option
+                                            v-for="batch in batches"
+                                            :key="batch.id"
+                                            :value="batch.id"
+                                        >
+                                            {{ batch.label }}
+                                        </option>
+                                    </select>
+                                </div>
+
+                                <label class="flex items-center gap-2 text-sm text-gray-700">
+                                    <input
+                                        v-model="form.return_to_depot"
+                                        type="checkbox"
+                                        class="rounded border-gray-300 text-gray-900 shadow-sm focus:ring-gray-900"
+                                    >
+                                    Regresar al CEDIS al finalizar
+                                </label>
+
+                                <button
+                                    type="button"
+                                    :disabled="loading || !hasBatchOptions"
+                                    class="inline-flex w-full justify-center rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
+                                    @click="compareJourney"
+                                >
+                                    {{ loading ? 'Comparando jornada...' : 'Comparar jornada' }}
+                                </button>
                             </div>
 
-                            <label class="flex items-center gap-2 text-sm text-gray-700">
-                                <input
-                                    v-model="form.return_to_depot"
-                                    type="checkbox"
-                                    class="rounded border-gray-300 text-gray-900 shadow-sm focus:ring-gray-900"
-                                >
-                                Regresar al CEDIS al finalizar
-                            </label>
-
-                            <button
-                                type="button"
-                                :disabled="loading || !hasBatchOptions"
-                                class="inline-flex w-full justify-center rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
-                                @click="previewRoute"
+                            <p
+                                v-if="errorMessage"
+                                class="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
                             >
-                                {{ loading ? 'Calculando ruta...' : 'Generar ruta' }}
-                            </button>
+                                {{ errorMessage }}
+                            </p>
                         </div>
 
-                        <p
-                            v-if="errorMessage"
-                            class="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-                        >
-                            {{ errorMessage }}
-                        </p>
+                        <div v-if="journey" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                            <h3 class="text-base font-semibold text-gray-900">Resumen de jornada</h3>
+                            <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                                <div class="rounded-md bg-gray-50 p-3">
+                                    <p class="text-xs uppercase tracking-wide text-gray-500">Conductor</p>
+                                    <p class="mt-1 text-sm font-semibold text-gray-900">
+                                        {{ journey.driver.name || 'Sin conductor' }}
+                                    </p>
+                                    <p class="text-xs text-gray-500">
+                                        {{ journey.driver.external_id || '-' }}
+                                    </p>
+                                </div>
+                                <div class="rounded-md bg-gray-50 p-3">
+                                    <p class="text-xs uppercase tracking-wide text-gray-500">Fecha</p>
+                                    <p class="mt-1 text-sm font-semibold text-gray-900">{{ journey.service_date }}</p>
+                                </div>
+                                <div class="rounded-md bg-gray-50 p-3">
+                                    <p class="text-xs uppercase tracking-wide text-gray-500">Facturas</p>
+                                    <p class="mt-1 text-lg font-semibold text-gray-900">{{ summary.total_invoices }}</p>
+                                </div>
+                                <div class="rounded-md bg-gray-50 p-3">
+                                    <p class="text-xs uppercase tracking-wide text-gray-500">Paradas</p>
+                                    <p class="mt-1 text-lg font-semibold text-gray-900">{{ summary.total_stops }}</p>
+                                </div>
+                                <div class="rounded-md bg-blue-50 p-3">
+                                    <p class="text-xs uppercase tracking-wide text-blue-700">Comparables</p>
+                                    <p class="mt-1 text-lg font-semibold text-blue-900">{{ summary.comparable_stops }}</p>
+                                </div>
+                                <div class="rounded-md bg-amber-50 p-3">
+                                    <p class="text-xs uppercase tracking-wide text-amber-700">No comparables</p>
+                                    <p class="mt-1 text-lg font-semibold text-amber-900">{{ summary.non_comparable_stops }}</p>
+                                </div>
+                            </div>
+                        </div>
 
-                        <div v-if="routePreview" class="mt-4 rounded-md border border-gray-200 bg-gray-50 p-3 text-sm">
-                            <p class="text-gray-700">
-                                Provider: <span class="font-semibold">{{ routePreview.provider }}</span>
-                                <span class="ml-2 text-xs text-gray-500">
-                                    (cache: {{ routePreview.cache_hit ? 'hit' : 'miss' }})
-                                </span>
-                            </p>
-                            <p class="mt-1 text-gray-700">
-                                Distancia: <span class="font-semibold">{{ distanceKm }} km</span>
-                            </p>
-                            <p class="text-gray-700">
-                                Tiempo estimado: <span class="font-semibold">{{ durationMin }} min</span>
-                            </p>
-                            <p class="mt-1 text-gray-700">
-                                Paradas en mapa: <span class="font-semibold">{{ routePreview.stops.length }}</span>
-                            </p>
+                        <div v-if="comparisonData" class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                            <h3 class="text-base font-semibold text-gray-900">Lectura operativa</h3>
+                            <div class="mt-3 space-y-3 text-sm">
+                                <div class="rounded-md border border-blue-200 bg-blue-50 p-3">
+                                    <p class="font-medium text-blue-900">Cómo fue</p>
+                                    <p class="mt-1 text-blue-800">
+                                        Usa el orden histórico reconstruido desde `historical_sequence`.
+                                    </p>
+                                </div>
+                                <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                                    <p class="font-medium text-emerald-900">Cómo pudo ser</p>
+                                    <p class="mt-1 text-emerald-800">
+                                        Reordena las mismas paradas comparables con una heurística determinista.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
-                    <div class="rounded-lg border border-gray-200 bg-white p-3 shadow-sm lg:col-span-2">
-                        <div ref="mapContainer" class="h-[520px] w-full rounded-md" />
-                    </div>
-                </div>
+                    <div class="space-y-4">
+                        <div v-if="comparisonData" class="grid gap-4 md:grid-cols-3">
+                            <div class="rounded-lg border border-blue-200 bg-white p-4 shadow-sm">
+                                <p class="text-xs uppercase tracking-wide text-blue-700">Cómo fue</p>
+                                <p class="mt-2 text-sm text-gray-600">Distancia</p>
+                                <p class="text-2xl font-semibold text-gray-900">
+                                    {{ routeDistanceKm(historicalRoute) }} km
+                                </p>
+                                <p class="mt-2 text-sm text-gray-600">Tiempo</p>
+                                <p class="text-lg font-semibold text-gray-900">
+                                    {{ routeDurationMin(historicalRoute) }} min
+                                </p>
+                            </div>
 
-                <div
-                    v-if="routePreview?.excluded_stops?.length"
-                    class="mt-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4"
-                >
-                    <h3 class="text-sm font-semibold text-yellow-800">
-                        Paradas excluidas de la ruta
-                    </h3>
-                    <ul class="mt-2 space-y-1 text-sm text-yellow-800">
-                        <li
-                            v-for="excluded in routePreview.excluded_stops"
-                            :key="excluded.invoice_stop_id"
+                            <div class="rounded-lg border border-emerald-200 bg-white p-4 shadow-sm">
+                                <p class="text-xs uppercase tracking-wide text-emerald-700">Cómo pudo ser</p>
+                                <p class="mt-2 text-sm text-gray-600">Distancia</p>
+                                <p class="text-2xl font-semibold text-gray-900">
+                                    {{ routeDistanceKm(suggestedRoute) }} km
+                                </p>
+                                <p class="mt-2 text-sm text-gray-600">Tiempo</p>
+                                <p class="text-lg font-semibold text-gray-900">
+                                    {{ routeDurationMin(suggestedRoute) }} min
+                                </p>
+                            </div>
+
+                            <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                                <p class="text-xs uppercase tracking-wide text-gray-500">{{ deltaLabel }}</p>
+                                <p
+                                    class="mt-2 text-2xl font-semibold"
+                                    :class="comparisonData.delta.distance_meters < 0 ? 'text-emerald-700' : 'text-gray-900'"
+                                >
+                                    {{ distanceDeltaKm }} km
+                                </p>
+                                <p
+                                    class="text-lg font-semibold"
+                                    :class="comparisonData.delta.duration_seconds < 0 ? 'text-emerald-700' : 'text-gray-900'"
+                                >
+                                    {{ durationDeltaMin }} min
+                                </p>
+                                <p class="mt-2 text-xs text-gray-500">
+                                    Valores negativos indican mejora del sugerido frente al histórico.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
+                            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div>
+                                    <h3 class="text-base font-semibold text-gray-900">Mapa de comparación</h3>
+                                    <p class="text-sm text-gray-500">
+                                        Alterna entre la reconstrucción histórica y la ruta sugerida.
+                                    </p>
+                                </div>
+
+                                <div
+                                    v-if="comparisonData"
+                                    class="inline-flex rounded-md border border-gray-200 bg-gray-50 p-1"
+                                >
+                                    <button
+                                        type="button"
+                                        class="rounded-md px-3 py-1.5 text-sm font-medium"
+                                        :class="activeView === 'historical' ? 'bg-blue-600 text-white' : 'text-gray-700'"
+                                        @click="activeView = 'historical'"
+                                    >
+                                        Cómo fue
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="rounded-md px-3 py-1.5 text-sm font-medium"
+                                        :class="activeView === 'suggested' ? 'bg-emerald-600 text-white' : 'text-gray-700'"
+                                        @click="activeView = 'suggested'"
+                                    >
+                                        Cómo pudo ser
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div ref="mapContainer" class="mt-4 h-[520px] w-full rounded-md" />
+                        </div>
+
+                        <div v-if="comparisonData" class="grid gap-4 xl:grid-cols-2">
+                            <div class="rounded-lg border border-blue-200 bg-white p-4 shadow-sm">
+                                <h3 class="text-sm font-semibold text-blue-900">Secuencia histórica</h3>
+                                <ol class="mt-3 space-y-2">
+                                    <li
+                                        v-for="stop in historicalRoute.stops"
+                                        :key="`historical-${stop.stop_key}`"
+                                        class="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm"
+                                    >
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p class="font-medium text-blue-950">
+                                                    {{ stop.sequence }}. {{ stop.branch_name }}
+                                                </p>
+                                                <p class="text-xs text-blue-700">
+                                                    {{ stop.branch_code }} · {{ stop.invoice_count }} facturas
+                                                </p>
+                                            </div>
+                                            <span class="rounded-full bg-white px-2 py-1 text-xs font-medium text-blue-800">
+                                                Histórica #{{ stop.historical_sequence }}
+                                            </span>
+                                        </div>
+                                    </li>
+                                </ol>
+                            </div>
+
+                            <div class="rounded-lg border border-emerald-200 bg-white p-4 shadow-sm">
+                                <h3 class="text-sm font-semibold text-emerald-900">Secuencia sugerida</h3>
+                                <ol class="mt-3 space-y-2">
+                                    <li
+                                        v-for="stop in suggestedRoute.stops"
+                                        :key="`suggested-${stop.stop_key}`"
+                                        class="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm"
+                                    >
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div>
+                                                <p class="font-medium text-emerald-950">
+                                                    {{ stop.sequence }}. {{ stop.branch_name }}
+                                                </p>
+                                                <p class="text-xs text-emerald-700">
+                                                    {{ stop.branch_code }} · {{ stop.invoice_count }} facturas
+                                                </p>
+                                            </div>
+                                            <span class="rounded-full bg-white px-2 py-1 text-xs font-medium text-emerald-800">
+                                                Histórica #{{ stop.historical_sequence }}
+                                            </span>
+                                        </div>
+                                    </li>
+                                </ol>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="comparisonData?.non_comparable_stops?.length || comparisonData?.excluded_stops?.length"
+                            class="grid gap-4 xl:grid-cols-2"
                         >
-                            {{ excluded.branch?.name || 'Sin sucursal' }}:
-                            {{ excluded.reason }} ({{ excluded.invoice_count }} facturas)
-                        </li>
-                    </ul>
+                            <div
+                                v-if="comparisonData.non_comparable_stops.length"
+                                class="rounded-lg border border-amber-200 bg-amber-50 p-4"
+                            >
+                                <h3 class="text-sm font-semibold text-amber-900">
+                                    Paradas no comparables
+                                </h3>
+                                <ul class="mt-2 space-y-2 text-sm text-amber-900">
+                                    <li
+                                        v-for="stop in comparisonData.non_comparable_stops"
+                                        :key="stop.stop_key"
+                                        class="rounded-md border border-amber-200 bg-white px-3 py-2"
+                                    >
+                                        {{ stop.branch_name }} ({{ stop.branch_code }}):
+                                        {{ stop.reason }} · {{ stop.invoice_count }} facturas
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div
+                                v-if="comparisonData.excluded_stops.length"
+                                class="rounded-lg border border-rose-200 bg-rose-50 p-4"
+                            >
+                                <h3 class="text-sm font-semibold text-rose-900">
+                                    Paradas excluidas
+                                </h3>
+                                <ul class="mt-2 space-y-2 text-sm text-rose-900">
+                                    <li
+                                        v-for="stop in comparisonData.excluded_stops"
+                                        :key="stop.stop_key"
+                                        class="rounded-md border border-rose-200 bg-white px-3 py-2"
+                                    >
+                                        {{ stop.branch?.name || 'Sin sucursal' }}
+                                        <span v-if="stop.branch?.code">({{ stop.branch.code }})</span>:
+                                        {{ stop.reason }} · {{ stop.invoice_count }} facturas
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <Link

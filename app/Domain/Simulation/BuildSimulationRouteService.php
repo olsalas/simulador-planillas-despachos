@@ -64,13 +64,31 @@ class BuildSimulationRouteService
             ];
         }
 
-        $depot = $this->resolveDepot($routeBatch, $validStops);
-        $waypoints = $this->buildWaypoints($depot, $validStops, $returnToDepot);
+        return $this->buildPreviewForOrderedStops($routeBatch, $validStops, $returnToDepot, $excludedStops);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $orderedStops
+     * @param  list<array<string, mixed>>  $excludedStops
+     * @param  array<string, mixed>  $metadata
+     * @return array<string, mixed>
+     */
+    public function buildPreviewForOrderedStops(
+        RouteBatch $routeBatch,
+        array $orderedStops,
+        bool $returnToDepot = true,
+        array $excludedStops = [],
+        array $metadata = [],
+    ): array {
+        $routeBatch->loadMissing('driver.depot');
+
+        $depot = $this->resolveDepotForStops($routeBatch, $orderedStops);
+        $waypoints = $this->buildWaypoints($depot, $orderedStops, $returnToDepot);
 
         [$route, $effectiveProvider, $cacheHit] = $this->routeWithCache($waypoints, $returnToDepot);
 
         $numberedStops = [];
-        foreach ($validStops as $index => $stop) {
+        foreach ($orderedStops as $index => $stop) {
             $numberedStops[] = [
                 ...$stop,
                 'sequence' => $index + 1,
@@ -92,6 +110,7 @@ class BuildSimulationRouteService
             'geometry' => $route['geometry'] ?? [],
             'legs' => $route['legs'] ?? [],
             'bounds' => $this->boundsFromGeometry($route['geometry'] ?? []),
+            ...$metadata,
         ];
     }
 
@@ -210,7 +229,7 @@ class BuildSimulationRouteService
      * @param  list<array{lat: float, lng: float}>  $validStops
      * @return array{lat: float, lng: float, name: string, code: string|null, source: string}
      */
-    private function resolveDepot(RouteBatch $routeBatch, array $validStops): array
+    public function resolveDepotForStops(RouteBatch $routeBatch, array $validStops): array
     {
         $driverDepot = $routeBatch->driver?->depot;
         if ($driverDepot !== null && $driverDepot->latitude !== null && $driverDepot->longitude !== null) {
