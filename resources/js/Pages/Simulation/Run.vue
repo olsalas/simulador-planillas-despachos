@@ -285,6 +285,9 @@ function ensureMap(center) {
         });
 
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+        map.on('click', () => {
+            closeAllPopups();
+        });
     } catch (error) {
         console.error(error);
         mapErrorMessage.value = 'No fue posible inicializar el mapa en este navegador. La comparación sigue disponible en métricas y secuencias.';
@@ -296,6 +299,7 @@ function ensureMap(center) {
 
 function clearMarkers() {
     for (const entry of markerEntries) {
+        entry.popup.remove();
         entry.marker.remove();
     }
 
@@ -326,6 +330,30 @@ function clearMapPresentation() {
         selectedStopSource.setData({
             type: 'FeatureCollection',
             features: [],
+        });
+    }
+}
+
+function closeAllPopups() {
+    for (const entry of markerEntries) {
+        entry.popup.remove();
+    }
+}
+
+function openExclusivePopup(entry, { flyTo = false } = {}) {
+    if (!map || !entry) {
+        return;
+    }
+
+    closeAllPopups();
+
+    entry.popup.setLngLat(entry.marker.getLngLat()).addTo(map);
+
+    if (flyTo) {
+        map.flyTo({
+            center: entry.marker.getLngLat(),
+            zoom: Math.max(map.getZoom(), 13),
+            essential: true,
         });
     }
 }
@@ -461,50 +489,62 @@ function renderMap() {
         clearMarkers();
 
         const depotElement = markerElement('D', '#0f172a');
-        depotElement.addEventListener('click', () => {
+        const depotPopup = new maplibregl.Popup({ offset: 18 }).setHTML(buildDepotPopupHtml(depot));
+
+        const depotEntry = {
+            key: 'depot',
+            kind: 'depot',
+            marker: null,
+            element: depotElement,
+            popup: depotPopup,
+        };
+
+        depotElement.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
             selectedStop.value = null;
+            openExclusivePopup(depotEntry);
         });
 
         const depotMarker = new maplibregl.Marker({
             element: depotElement,
         })
             .setLngLat([depot.lng, depot.lat])
-            .setPopup(
-                new maplibregl.Popup({ offset: 18 }).setHTML(buildDepotPopupHtml(depot)),
-            )
+            .setPopup(depotPopup)
             .addTo(map);
-        markerEntries.push({
-            key: 'depot',
-            kind: 'depot',
-            marker: depotMarker,
-            element: depotElement,
-        });
+        depotEntry.marker = depotMarker;
+        markerEntries.push(depotEntry);
 
         for (const stop of routeData.stops) {
             const stopElement = markerElement(String(stop.sequence), stopColor);
-            stopElement.addEventListener('click', () => {
+            const stopPopup = new maplibregl.Popup({ offset: 18 }).setHTML(
+                buildStopPopupHtml(stop, routeData.label ?? 'Parada'),
+            );
+            const entry = {
+                key: stop.stop_key,
+                kind: 'stop',
+                marker: null,
+                element: stopElement,
+                popup: stopPopup,
+            };
+
+            stopElement.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopImmediatePropagation();
                 selectedStop.value = {
                     routeView: activeView.value,
                     stopKey: stop.stop_key,
                 };
+                openExclusivePopup(entry);
             });
 
             const stopMarker = new maplibregl.Marker({
                 element: stopElement,
             })
                 .setLngLat([stop.lng, stop.lat])
-                .setPopup(
-                    new maplibregl.Popup({ offset: 18 }).setHTML(
-                        buildStopPopupHtml(stop, routeData.label ?? 'Parada'),
-                    ),
-                )
+                .setPopup(stopPopup)
                 .addTo(map);
-            const entry = {
-                key: stop.stop_key,
-                kind: 'stop',
-                marker: stopMarker,
-                element: stopElement,
-            };
+            entry.marker = stopMarker;
 
             markerEntries.push(entry);
             markerLookup.set(stop.stop_key, entry);
@@ -515,10 +555,8 @@ function renderMap() {
 
         if (selectedStop.value?.routeView === activeView.value) {
             const selectedEntry = markerLookup.get(selectedStop.value.stopKey);
-            const selectedPopup = selectedEntry?.marker.getPopup();
-
-            if (selectedEntry && selectedPopup) {
-                selectedPopup.setLngLat(selectedEntry.marker.getLngLat()).addTo(map);
+            if (selectedEntry) {
+                openExclusivePopup(selectedEntry);
             }
         }
 
@@ -548,21 +586,11 @@ function openStopPopup(stopKey, { flyTo = true } = {}) {
     }
 
     const entry = markerLookup.get(stopKey);
-    const popup = entry?.marker.getPopup();
-
-    if (!entry || !popup) {
+    if (!entry) {
         return;
     }
 
-    popup.setLngLat(entry.marker.getLngLat()).addTo(map);
-
-    if (flyTo) {
-        map.flyTo({
-            center: entry.marker.getLngLat(),
-            zoom: Math.max(map.getZoom(), 13),
-            essential: true,
-        });
-    }
+    openExclusivePopup(entry, { flyTo });
 }
 
 async function focusStop(stop, routeView) {
