@@ -4,7 +4,6 @@ namespace App\Domain\Routing\Providers;
 
 use App\Contracts\RoutingProvider;
 use App\Domain\Routing\Support\FlexiblePolylineDecoder;
-use App\Domain\Routing\Support\GeoMath;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -119,32 +118,58 @@ class HereRoutingProvider implements RoutingProvider
 
     public function buildMatrix(array $stops, array $options = []): array
     {
-        $distances = [];
-        $durations = [];
+        if (empty($this->apiKey)) {
+            throw new RuntimeException('HERE provider selected but HERE_API_KEY is missing.');
+        }
 
-        foreach ($stops as $i => $from) {
-            $distanceRow = [];
-            $durationRow = [];
+        if ($stops === []) {
+            return [
+                'distances' => [],
+                'durations' => [],
+            ];
+        }
 
-            foreach ($stops as $j => $to) {
-                if ($i === $j) {
-                    $distanceRow[] = 0.0;
-                    $durationRow[] = 0.0;
-                    continue;
-                }
+        if (count($stops) === 1) {
+            return [
+                'distances' => [[0.0]],
+                'durations' => [[0.0]],
+            ];
+        }
 
-                $distance = GeoMath::distanceMeters($from, $to);
-                $distanceRow[] = $distance;
-                $durationRow[] = $distance / 11.11;
-            }
+        $response = Http::timeout(20)
+            ->acceptJson()
+            ->post(
+                'https://matrix.router.hereapi.com/v8/matrix?async=false&apiKey='
+                .urlencode($this->apiKey)
+                .'&transportMode=car&routingMode=fast',
+                [
+                    'origins' => $stops,
+                    'destinations' => $stops,
+                    'regionDefinition' => [
+                        'type' => 'world',
+                    ],
+                    'matrixAttributes' => ['distances', 'travelTimes'],
+                ]
+            );
 
-            $distances[] = $distanceRow;
-            $durations[] = $durationRow;
+        $response->throw();
+
+        $matrix = data_get($response->json(), 'matrix');
+        if (! is_array($matrix)) {
+            throw new RuntimeException('HERE matrix response did not include matrix payload.');
         }
 
         return [
-            'distances' => $distances,
-            'durations' => $durations,
+            'distances' => $this->inflateMatrixRows(
+                data_get($matrix, 'distances', []),
+                (int) data_get($matrix, 'numOrigins', count($stops)),
+                (int) data_get($matrix, 'numDestinations', count($stops)),
+            ),
+            'durations' => $this->inflateMatrixRows(
+                data_get($matrix, 'travelTimes', []),
+                (int) data_get($matrix, 'numOrigins', count($stops)),
+                (int) data_get($matrix, 'numDestinations', count($stops)),
+            ),
         ];
     }
 
@@ -154,5 +179,33 @@ class HereRoutingProvider implements RoutingProvider
     private function formatPoint(array $point): string
     {
         return $point['lat'].','.$point['lng'];
+    }
+
+    /**
+     * @param  mixed  $values
+     * @return list<list<float|null>>
+     */
+    private function inflateMatrixRows(mixed $values, int $numRows, int $numColumns): array
+    {
+        if (! is_array($values)) {
+            throw new RuntimeException('HERE matrix response did not include a valid matrix array.');
+        }
+
+        $rows = [];
+
+        for ($rowIndex = 0; $rowIndex < $numRows; $rowIndex++) {
+            $row = [];
+
+            for ($columnIndex = 0; $columnIndex < $numColumns; $columnIndex++) {
+                $flatIndex = ($rowIndex * $numColumns) + $columnIndex;
+                $value = $values[$flatIndex] ?? null;
+
+                $row[] = is_numeric($value) ? (float) $value : null;
+            }
+
+            $rows[] = $row;
+        }
+
+        return $rows;
     }
 }
