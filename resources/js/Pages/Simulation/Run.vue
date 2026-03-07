@@ -131,6 +131,73 @@ function routeDurationMin(routeData) {
     return (routeData.metrics.duration_seconds / 60).toFixed(1);
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function popupField(label, value) {
+    if (value === null || value === undefined || value === '') {
+        return '';
+    }
+
+    return `
+        <p style="margin: 4px 0 0; color: #334155; font-size: 12px; line-height: 1.45;">
+            <strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}
+        </p>
+    `;
+}
+
+function formatDepotSource(source) {
+    const labels = {
+        driver_depot: 'CEDIS asignado al conductor',
+        first_active_depot: 'CEDIS activo por defecto',
+        config_fallback_depot: 'CEDIS fallback de configuracion',
+        first_stop_fallback: 'Primera parada como fallback',
+        hardcoded_fallback: 'CEDIS temporal por defecto',
+    };
+
+    return labels[source] ?? source;
+}
+
+function buildDepotPopupHtml(depot) {
+    return `
+        <div style="min-width: 220px;">
+            <p style="margin: 0; color: #0f172a; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">
+                CEDIS
+            </p>
+            <p style="margin: 6px 0 0; color: #0f172a; font-size: 14px; font-weight: 700;">
+                ${escapeHtml(depot.name)}
+            </p>
+            ${popupField('Codigo', depot.code)}
+            ${popupField('Direccion', depot.address)}
+            ${popupField('Origen', formatDepotSource(depot.source))}
+        </div>
+    `;
+}
+
+function buildStopPopupHtml(stop, routeLabel) {
+    return `
+        <div style="min-width: 240px;">
+            <p style="margin: 0; color: #0f172a; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">
+                ${escapeHtml(routeLabel)}
+            </p>
+            <p style="margin: 6px 0 0; color: #0f172a; font-size: 14px; font-weight: 700;">
+                ${escapeHtml(`${stop.sequence}. ${stop.branch_name}`)}
+            </p>
+            ${popupField('Codigo', stop.branch_code)}
+            ${popupField('Direccion', stop.branch_address)}
+            ${popupField('Facturas', String(stop.invoice_count))}
+            ${popupField('Secuencia actual', String(stop.sequence))}
+            ${popupField('Secuencia historica', stop.historical_sequence !== null && stop.historical_sequence !== undefined ? `#${stop.historical_sequence}` : '')}
+        </div>
+    `;
+}
+
 function markerElement(label, backgroundColor) {
     const node = document.createElement('div');
     node.style.width = '30px';
@@ -145,6 +212,7 @@ function markerElement(label, backgroundColor) {
     node.style.fontWeight = '700';
     node.style.border = '2px solid white';
     node.style.boxShadow = '0 1px 4px rgba(0,0,0,0.35)';
+    node.style.cursor = 'pointer';
     node.innerText = label;
 
     return node;
@@ -289,13 +357,25 @@ function renderMap() {
 
         const depotMarker = new maplibregl.Marker({
             element: markerElement('D', '#0f172a'),
-        }).setLngLat([depot.lng, depot.lat]).addTo(map);
+        })
+            .setLngLat([depot.lng, depot.lat])
+            .setPopup(
+                new maplibregl.Popup({ offset: 18 }).setHTML(buildDepotPopupHtml(depot)),
+            )
+            .addTo(map);
         markers.push(depotMarker);
 
         for (const stop of routeData.stops) {
             const stopMarker = new maplibregl.Marker({
                 element: markerElement(String(stop.sequence), stopColor),
-            }).setLngLat([stop.lng, stop.lat]).addTo(map);
+            })
+                .setLngLat([stop.lng, stop.lat])
+                .setPopup(
+                    new maplibregl.Popup({ offset: 18 }).setHTML(
+                        buildStopPopupHtml(stop, routeData.label ?? 'Parada'),
+                    ),
+                )
+                .addTo(map);
             markers.push(stopMarker);
         }
 

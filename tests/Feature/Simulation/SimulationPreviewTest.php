@@ -27,6 +27,7 @@ class SimulationPreviewTest extends TestCase
         $depot = Depot::create([
             'code' => 'CEDIS-1',
             'name' => 'CEDIS Norte',
+            'address' => 'Av. Norte 100',
             'latitude' => 19.5000000,
             'longitude' => -99.2000000,
             'is_active' => true,
@@ -42,6 +43,7 @@ class SimulationPreviewTest extends TestCase
         $branchA = Branch::create([
             'code' => 'BR-A',
             'name' => 'Sucursal A',
+            'address' => 'Calle Uno 123',
             'latitude' => 19.5100000,
             'longitude' => -99.1900000,
             'is_active' => true,
@@ -91,6 +93,8 @@ class SimulationPreviewTest extends TestCase
         $firstResponse->assertOk()
             ->assertJsonPath('provider', 'mock')
             ->assertJsonPath('cache_hit', false)
+            ->assertJsonPath('depot.address', 'Av. Norte 100')
+            ->assertJsonPath('stops.0.branch_address', 'Calle Uno 123')
             ->assertJsonPath('stops.0.sequence', 1)
             ->assertJsonPath('stops.1.sequence', 2);
 

@@ -58,6 +58,7 @@ class BuildSimulationRouteService
                 'branch_id' => $branch->id,
                 'branch_code' => $branch->code,
                 'branch_name' => $branch->name,
+                'branch_address' => $branch->address,
                 'invoice_count' => $stop->invoice_count,
                 'lat' => (float) $branch->latitude,
                 'lng' => (float) $branch->longitude,
@@ -227,7 +228,7 @@ class BuildSimulationRouteService
     /**
      * @param  RouteBatch  $routeBatch
      * @param  list<array{lat: float, lng: float}>  $validStops
-     * @return array{lat: float, lng: float, name: string, code: string|null, source: string}
+     * @return array{lat: float, lng: float, name: string, code: string|null, address: string|null, source: string}
      */
     public function resolveDepotForStops(RouteBatch $routeBatch, array $validStops): array
     {
@@ -238,6 +239,7 @@ class BuildSimulationRouteService
                 'lng' => (float) $driverDepot->longitude,
                 'name' => $driverDepot->name,
                 'code' => $driverDepot->code,
+                'address' => $driverDepot->address,
                 'source' => 'driver_depot',
             ];
         }
@@ -255,6 +257,7 @@ class BuildSimulationRouteService
                 'lng' => (float) $activeDepot->longitude,
                 'name' => $activeDepot->name,
                 'code' => $activeDepot->code,
+                'address' => $activeDepot->address,
                 'source' => 'first_active_depot',
             ];
         }
@@ -268,6 +271,7 @@ class BuildSimulationRouteService
                 'lng' => (float) $fallbackLng,
                 'name' => (string) config('routing.fallback_depot.name', 'CEDIS Fallback'),
                 'code' => null,
+                'address' => null,
                 'source' => 'config_fallback_depot',
             ];
         }
@@ -278,6 +282,7 @@ class BuildSimulationRouteService
                 'lng' => (float) $validStops[0]['lng'],
                 'name' => 'CEDIS temporal (primera parada)',
                 'code' => null,
+                'address' => null,
                 'source' => 'first_stop_fallback',
             ];
         }
@@ -287,6 +292,7 @@ class BuildSimulationRouteService
             'lng' => -99.133209,
             'name' => 'CEDIS temporal (default)',
             'code' => null,
+            'address' => null,
             'source' => 'hardcoded_fallback',
         ];
     }
