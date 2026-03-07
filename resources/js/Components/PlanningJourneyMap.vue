@@ -200,19 +200,6 @@ function clearMapPresentation() {
     }
 }
 
-function withMapReady(callback) {
-    if (!map) {
-        return;
-    }
-
-    if (map.isStyleLoaded()) {
-        callback();
-        return;
-    }
-
-    map.once('load', callback);
-}
-
 function closePopups(except = null) {
     for (const entry of markerEntries) {
         if (entry !== except) {
@@ -269,7 +256,7 @@ function updateMapForJourney() {
         return;
     }
 
-    withMapReady(() => {
+    const draw = () => {
         if (!map) {
             return;
         }
@@ -397,7 +384,14 @@ function updateMapForJourney() {
             map.setCenter(center);
             map.setZoom(12);
         }
-    });
+    };
+
+    if (map.loaded()) {
+        draw();
+        return;
+    }
+
+    map.once('load', draw);
 }
 
 function scheduleMapRefresh() {
