@@ -161,6 +161,14 @@ class PlanningScenarioController extends Controller
                 'total_stops' => $journey->total_stops,
                 'total_invoices' => $journey->total_invoices,
                 'summary' => $journey->summary ?? [],
+                'route_preview' => [
+                    'provider' => data_get($journey->summary, 'provider'),
+                    'cache_hit' => (bool) data_get($journey->summary, 'cache_hit', false),
+                    'return_to_depot' => (bool) data_get($journey->summary, 'return_to_depot', true),
+                    'depot' => data_get($journey->summary, 'depot'),
+                    'geometry' => data_get($journey->summary, 'geometry', []),
+                    'bounds' => data_get($journey->summary, 'bounds'),
+                ],
                 'driver' => [
                     'id' => $journey->driver?->id,
                     'name' => $journey->driver?->name,

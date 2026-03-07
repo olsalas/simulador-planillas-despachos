@@ -102,8 +102,12 @@ class GeneratePlanningScenarioAllocationService
                     'summary' => [
                         'provider' => $routePreview['provider'],
                         'return_to_depot' => $routePreview['return_to_depot'],
+                        'cache_hit' => $routePreview['cache_hit'],
                         'distance_meters' => $routePreview['metrics']['distance_meters'],
                         'duration_seconds' => $routePreview['metrics']['duration_seconds'],
+                        'depot' => $routePreview['depot'],
+                        'geometry' => $routePreview['geometry'],
+                        'bounds' => $routePreview['bounds'],
                     ],
                 ]);
 
