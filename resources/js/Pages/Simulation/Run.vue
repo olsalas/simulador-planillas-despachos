@@ -37,9 +37,11 @@ const comparisonData = ref(null);
 const activeView = ref('historical');
 const mapContainer = ref(null);
 const mapErrorMessage = ref('');
+const selectedStop = ref(null);
 
 let map = null;
-let markers = [];
+let markerEntries = [];
+let markerLookup = new Map();
 
 const availableDates = computed(() => [...new Set(props.batches.map((batch) => batch.service_date))]);
 const filteredBatches = computed(() => {
@@ -131,6 +133,73 @@ function routeDurationMin(routeData) {
     return (routeData.metrics.duration_seconds / 60).toFixed(1);
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function popupField(label, value) {
+    if (value === null || value === undefined || value === '') {
+        return '';
+    }
+
+    return `
+        <p style="margin: 4px 0 0; color: #334155; font-size: 12px; line-height: 1.45;">
+            <strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}
+        </p>
+    `;
+}
+
+function formatDepotSource(source) {
+    const labels = {
+        driver_depot: 'CEDIS asignado al conductor',
+        first_active_depot: 'CEDIS activo por defecto',
+        config_fallback_depot: 'CEDIS fallback de configuracion',
+        first_stop_fallback: 'Primera parada como fallback',
+        hardcoded_fallback: 'CEDIS temporal por defecto',
+    };
+
+    return labels[source] ?? source;
+}
+
+function buildDepotPopupHtml(depot) {
+    return `
+        <div style="min-width: 220px;">
+            <p style="margin: 0; color: #0f172a; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">
+                CEDIS
+            </p>
+            <p style="margin: 6px 0 0; color: #0f172a; font-size: 14px; font-weight: 700;">
+                ${escapeHtml(depot.name)}
+            </p>
+            ${popupField('Codigo', depot.code)}
+            ${popupField('Direccion', depot.address)}
+            ${popupField('Origen', formatDepotSource(depot.source))}
+        </div>
+    `;
+}
+
+function buildStopPopupHtml(stop, routeLabel) {
+    return `
+        <div style="min-width: 240px;">
+            <p style="margin: 0; color: #0f172a; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">
+                ${escapeHtml(routeLabel)}
+            </p>
+            <p style="margin: 6px 0 0; color: #0f172a; font-size: 14px; font-weight: 700;">
+                ${escapeHtml(`${stop.sequence}. ${stop.branch_name}`)}
+            </p>
+            ${popupField('Codigo', stop.branch_code)}
+            ${popupField('Direccion', stop.branch_address)}
+            ${popupField('Facturas', String(stop.invoice_count))}
+            ${popupField('Secuencia actual', String(stop.sequence))}
+            ${popupField('Secuencia historica', stop.historical_sequence !== null && stop.historical_sequence !== undefined ? `#${stop.historical_sequence}` : '')}
+        </div>
+    `;
+}
+
 function markerElement(label, backgroundColor) {
     const node = document.createElement('div');
     node.style.width = '30px';
@@ -145,9 +214,32 @@ function markerElement(label, backgroundColor) {
     node.style.fontWeight = '700';
     node.style.border = '2px solid white';
     node.style.boxShadow = '0 1px 4px rgba(0,0,0,0.35)';
+    node.style.cursor = 'pointer';
     node.innerText = label;
 
     return node;
+}
+
+function isStopSelected(routeView, stopKey) {
+    return selectedStop.value?.routeView === routeView && selectedStop.value?.stopKey === stopKey;
+}
+
+function setMarkerSelectedState(entry, isSelected) {
+    entry.element.style.boxShadow = isSelected
+        ? '0 0 0 4px rgba(59, 130, 246, 0.18), 0 4px 10px rgba(15, 23, 42, 0.35)'
+        : '0 1px 4px rgba(0,0,0,0.35)';
+    entry.element.style.borderColor = isSelected ? '#dbeafe' : '#ffffff';
+    entry.element.style.borderWidth = isSelected ? '3px' : '2px';
+    entry.element.style.zIndex = isSelected ? '10' : '1';
+}
+
+function applySelectedMarkerState() {
+    for (const entry of markerEntries) {
+        const isSelected = entry.kind === 'stop'
+            && isStopSelected(activeView.value, entry.key);
+
+        setMarkerSelectedState(entry, isSelected);
+    }
 }
 
 function supportsWebGl() {
@@ -194,6 +286,9 @@ function ensureMap(center) {
         });
 
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+        map.on('click', () => {
+            closeAllPopups();
+        });
     } catch (error) {
         console.error(error);
         mapErrorMessage.value = 'No fue posible inicializar el mapa en este navegador. La comparación sigue disponible en métricas y secuencias.';
@@ -204,11 +299,13 @@ function ensureMap(center) {
 }
 
 function clearMarkers() {
-    for (const marker of markers) {
-        marker.remove();
+    for (const entry of markerEntries) {
+        entry.popup.remove();
+        entry.marker.remove();
     }
 
-    markers = [];
+    markerEntries = [];
+    markerLookup = new Map();
 }
 
 function clearMapPresentation() {
@@ -228,6 +325,111 @@ function clearMapPresentation() {
             },
         });
     }
+
+    const selectedStopSource = map.getSource('selected-stop');
+    if (selectedStopSource) {
+        selectedStopSource.setData({
+            type: 'FeatureCollection',
+            features: [],
+        });
+    }
+}
+
+function closeAllPopups() {
+    for (const entry of markerEntries) {
+        entry.popup.remove();
+    }
+}
+
+function openExclusivePopup(entry, { flyTo = false } = {}) {
+    if (!map || !entry) {
+        return;
+    }
+
+    closeAllPopups();
+
+    entry.popup.setLngLat(entry.marker.getLngLat()).addTo(map);
+
+    if (flyTo) {
+        map.flyTo({
+            center: entry.marker.getLngLat(),
+            zoom: Math.max(map.getZoom(), 13),
+            essential: true,
+        });
+    }
+}
+
+function selectedStopFeature(routeData) {
+    if (!routeData || selectedStop.value?.routeView !== activeView.value) {
+        return {
+            type: 'FeatureCollection',
+            features: [],
+        };
+    }
+
+    const stop = routeData.stops.find((candidate) => candidate.stop_key === selectedStop.value.stopKey);
+
+    if (!stop) {
+        return {
+            type: 'FeatureCollection',
+            features: [],
+        };
+    }
+
+    return {
+        type: 'FeatureCollection',
+        features: [{
+            type: 'Feature',
+            geometry: {
+                type: 'Point',
+                coordinates: [stop.lng, stop.lat],
+            },
+        }],
+    };
+}
+
+function updateSelectedStopOverlay(routeData, lineColor) {
+    if (!map) {
+        return;
+    }
+
+    const selectedStopGeoJson = selectedStopFeature(routeData);
+
+    if (map.getSource('selected-stop')) {
+        map.getSource('selected-stop').setData(selectedStopGeoJson);
+        map.setPaintProperty('selected-stop-halo', 'circle-color', lineColor);
+        map.setPaintProperty('selected-stop-core', 'circle-stroke-color', lineColor);
+        return;
+    }
+
+    map.addSource('selected-stop', {
+        type: 'geojson',
+        data: selectedStopGeoJson,
+    });
+
+    map.addLayer({
+        id: 'selected-stop-halo',
+        type: 'circle',
+        source: 'selected-stop',
+        paint: {
+            'circle-radius': 22,
+            'circle-color': lineColor,
+            'circle-opacity': 0.16,
+        },
+    });
+
+    map.addLayer({
+        id: 'selected-stop-core',
+        type: 'circle',
+        source: 'selected-stop',
+        paint: {
+            'circle-radius': 11,
+            'circle-color': '#ffffff',
+            'circle-stroke-width': 4,
+            'circle-stroke-color': lineColor,
+            'circle-opacity': 0.95,
+        },
+    });
 }
 
 function renderMap() {
@@ -287,16 +489,76 @@ function renderMap() {
 
         clearMarkers();
 
+        const depotElement = markerElement('D', '#0f172a');
+        const depotPopup = new maplibregl.Popup({ offset: 18 }).setHTML(buildDepotPopupHtml(depot));
+
+        const depotEntry = {
+            key: 'depot',
+            kind: 'depot',
+            marker: null,
+            element: depotElement,
+            popup: depotPopup,
+        };
+
+        depotElement.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            selectedStop.value = null;
+            openExclusivePopup(depotEntry);
+        });
+
         const depotMarker = new maplibregl.Marker({
-            element: markerElement('D', '#0f172a'),
-        }).setLngLat([depot.lng, depot.lat]).addTo(map);
-        markers.push(depotMarker);
+            element: depotElement,
+        })
+            .setLngLat([depot.lng, depot.lat])
+            .setPopup(depotPopup)
+            .addTo(map);
+        depotEntry.marker = depotMarker;
+        markerEntries.push(depotEntry);
 
         for (const stop of routeData.stops) {
+            const stopElement = markerElement(String(stop.sequence), stopColor);
+            const stopPopup = new maplibregl.Popup({ offset: 18 }).setHTML(
+                buildStopPopupHtml(stop, routeData.label ?? 'Parada'),
+            );
+            const entry = {
+                key: stop.stop_key,
+                kind: 'stop',
+                marker: null,
+                element: stopElement,
+                popup: stopPopup,
+            };
+
+            stopElement.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                selectedStop.value = {
+                    routeView: activeView.value,
+                    stopKey: stop.stop_key,
+                };
+                openExclusivePopup(entry);
+            });
+
             const stopMarker = new maplibregl.Marker({
-                element: markerElement(String(stop.sequence), stopColor),
-            }).setLngLat([stop.lng, stop.lat]).addTo(map);
-            markers.push(stopMarker);
+                element: stopElement,
+            })
+                .setLngLat([stop.lng, stop.lat])
+                .setPopup(stopPopup)
+                .addTo(map);
+            entry.marker = stopMarker;
+
+            markerEntries.push(entry);
+            markerLookup.set(stop.stop_key, entry);
+        }
+
+        applySelectedMarkerState();
+        updateSelectedStopOverlay(routeData, lineColor);
+
+        if (selectedStop.value?.routeView === activeView.value) {
+            const selectedEntry = markerLookup.get(selectedStop.value.stopKey);
+            if (selectedEntry) {
+                openExclusivePopup(selectedEntry);
+            }
         }
 
         const bounds = new maplibregl.LngLatBounds();
@@ -319,10 +581,39 @@ function renderMap() {
     map.once('load', draw);
 }
 
+function openStopPopup(stopKey, { flyTo = true } = {}) {
+    if (!map) {
+        return;
+    }
+
+    const entry = markerLookup.get(stopKey);
+    if (!entry) {
+        return;
+    }
+
+    openExclusivePopup(entry, { flyTo });
+}
+
+async function focusStop(stop, routeView) {
+    selectedStop.value = {
+        routeView,
+        stopKey: stop.stop_key,
+    };
+
+    if (activeView.value !== routeView) {
+        activeView.value = routeView;
+        return;
+    }
+
+    await nextTick();
+    openStopPopup(stop.stop_key);
+}
+
 async function compareJourney() {
     errorMessage.value = '';
     comparisonData.value = null;
     mapErrorMessage.value = '';
+    selectedStop.value = null;
     clearMapPresentation();
 
     if (!form.value.route_batch_id) {
@@ -365,6 +656,7 @@ watch(filteredBatches, (batches) => {
     comparisonData.value = null;
     errorMessage.value = '';
     mapErrorMessage.value = '';
+    selectedStop.value = null;
     clearMapPresentation();
 });
 
@@ -376,8 +668,18 @@ watch(() => form.value.route_batch_id, (newBatchId, oldBatchId) => {
     comparisonData.value = null;
     errorMessage.value = '';
     mapErrorMessage.value = '';
+    selectedStop.value = null;
     clearMapPresentation();
 });
+
+watch(selectedStop, () => {
+    applySelectedMarkerState();
+    updateSelectedStopOverlay(activeRoute.value, activeView.value === 'historical' ? '#2563eb' : '#166534');
+
+    if (selectedStop.value?.routeView === activeView.value) {
+        openStopPopup(selectedStop.value.stopKey, { flyTo: false });
+    }
+}, { deep: true });
 
 watch(activeRoute, async (routeData) => {
     if (!routeData) {
@@ -630,7 +932,7 @@ onBeforeUnmount(() => {
                                 <div>
                                     <h3 class="text-base font-semibold text-gray-900">Mapa de comparación</h3>
                                     <p class="text-sm text-gray-500">
-                                        Alterna entre la reconstrucción histórica y la ruta sugerida.
+                                        Alterna entre la reconstrucción histórica y la ruta sugerida. Haz clic en el mapa o en las listas para sincronizar la parada seleccionada.
                                     </p>
                                 </div>
 
@@ -683,7 +985,11 @@ onBeforeUnmount(() => {
                                     <li
                                         v-for="stop in historicalRoute.stops"
                                         :key="`historical-${stop.stop_key}`"
-                                        class="rounded-md border border-blue-100 bg-blue-50 px-3 py-2 text-sm"
+                                        class="cursor-pointer rounded-md border px-3 py-2 text-sm transition"
+                                        :class="isStopSelected('historical', stop.stop_key)
+                                            ? 'border-blue-400 bg-blue-100 ring-2 ring-blue-200'
+                                            : 'border-blue-100 bg-blue-50 hover:border-blue-200 hover:bg-blue-100/80'"
+                                        @click="focusStop(stop, 'historical')"
                                     >
                                         <div class="flex items-start justify-between gap-3">
                                             <div>
@@ -692,6 +998,9 @@ onBeforeUnmount(() => {
                                                 </p>
                                                 <p class="text-xs text-blue-700">
                                                     {{ stop.branch_code }} · {{ stop.invoice_count }} facturas
+                                                </p>
+                                                <p v-if="stop.branch_address" class="mt-1 text-xs text-blue-600">
+                                                    {{ stop.branch_address }}
                                                 </p>
                                             </div>
                                             <span class="rounded-full bg-white px-2 py-1 text-xs font-medium text-blue-800">
@@ -708,7 +1017,11 @@ onBeforeUnmount(() => {
                                     <li
                                         v-for="stop in suggestedRoute.stops"
                                         :key="`suggested-${stop.stop_key}`"
-                                        class="rounded-md border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm"
+                                        class="cursor-pointer rounded-md border px-3 py-2 text-sm transition"
+                                        :class="isStopSelected('suggested', stop.stop_key)
+                                            ? 'border-emerald-400 bg-emerald-100 ring-2 ring-emerald-200'
+                                            : 'border-emerald-100 bg-emerald-50 hover:border-emerald-200 hover:bg-emerald-100/80'"
+                                        @click="focusStop(stop, 'suggested')"
                                     >
                                         <div class="flex items-start justify-between gap-3">
                                             <div>
@@ -717,6 +1030,9 @@ onBeforeUnmount(() => {
                                                 </p>
                                                 <p class="text-xs text-emerald-700">
                                                     {{ stop.branch_code }} · {{ stop.invoice_count }} facturas
+                                                </p>
+                                                <p v-if="stop.branch_address" class="mt-1 text-xs text-emerald-600">
+                                                    {{ stop.branch_address }}
                                                 </p>
                                             </div>
                                             <span class="rounded-full bg-white px-2 py-1 text-xs font-medium text-emerald-800">

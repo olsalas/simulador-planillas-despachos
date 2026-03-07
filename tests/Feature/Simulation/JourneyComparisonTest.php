@@ -28,6 +28,7 @@ class JourneyComparisonTest extends TestCase
         $depot = Depot::create([
             'code' => 'CEDIS-1',
             'name' => 'CEDIS Norte',
+            'address' => 'Av. Principal 123',
             'latitude' => 19.5000000,
             'longitude' => -99.2000000,
             'is_active' => true,
@@ -43,6 +44,7 @@ class JourneyComparisonTest extends TestCase
         $branchA = Branch::create([
             'code' => 'BR-A',
             'name' => 'Sucursal A',
+            'address' => 'Calle 1 # 10-20',
             'latitude' => 19.5900000,
             'longitude' => -99.2000000,
             'is_active' => true,
@@ -139,7 +141,9 @@ class JourneyComparisonTest extends TestCase
             ->assertJsonPath('journey.summary.non_comparable_stops', 1)
             ->assertJsonPath('journey.summary.excluded_stops', 1)
             ->assertJsonPath('historical_route.label', 'Como fue')
+            ->assertJsonPath('historical_route.depot.address', 'Av. Principal 123')
             ->assertJsonPath('historical_route.stops.0.branch_code', 'BR-A')
+            ->assertJsonPath('historical_route.stops.0.branch_address', 'Calle 1 # 10-20')
             ->assertJsonPath('historical_route.stops.0.historical_sequence', 1)
             ->assertJsonPath('historical_route.stops.1.branch_code', 'BR-B')
             ->assertJsonPath('suggested_route.label', 'Como pudo ser')
@@ -149,6 +153,7 @@ class JourneyComparisonTest extends TestCase
             ->assertJsonPath('non_comparable_stops.0.branch_code', 'BR-C')
             ->assertJsonPath('non_comparable_stops.0.reason', 'missing_historical_sequence')
             ->assertJsonPath('excluded_stops.0.branch.code', 'BR-D')
+            ->assertJsonPath('excluded_stops.0.branch.address', null)
             ->assertJsonPath('excluded_stops.0.reason', 'missing_branch_geocode');
 
         $this->assertGreaterThan(
@@ -221,6 +226,7 @@ class JourneyComparisonTest extends TestCase
         $depot = Depot::create([
             'code' => 'CEDIS-2',
             'name' => 'CEDIS Centro',
+            'address' => 'Carrera 15 # 90-10',
             'latitude' => 19.5000000,
             'longitude' => -99.2000000,
             'is_active' => true,
