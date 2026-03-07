@@ -1,59 +1,117 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Ruteo
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+MVP para **ingesta de históricos de facturación** y **simulación de rutas por conductor + día**.
 
-## About Laravel
+La app permite:
+1. Cargar CSV de conductores y facturas.
+2. Consolidar lotes (`route_batches`) y paradas (`invoice_stops`).
+3. Simular una ruta en mapa con proveedor real (HERE) o mock.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Stack técnico
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- Backend: `Laravel 12`, `PHP 8.2+`.
+- Frontend: `Inertia.js 2`, `Vue 3`, `Vite`, `Tailwind CSS`.
+- Persistencia: `PostgreSQL` (Sail) o `SQLite` (local rápido/testing).
+- Cache/colas en local Docker: `Redis`.
+- Mapa: `maplibre-gl` con tiles OSM.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Flujo funcional
 
-## Learning Laravel
+1. `POST /dashboard/upload-csv` procesa un CSV (`drivers` o `invoices`).
+2. `CsvIngestionService` valida fila por fila y persiste `ingestion_batches` + `ingestion_rows`.
+3. Para facturas, se actualizan `invoices`, se clasifican outliers y se consolida `route_batches` + `invoice_stops`.
+4. `POST /dashboard/simulate/preview` construye la ruta para un batch usando `BuildSimulationRouteService`.
+5. El servicio resuelve depósito, ejecuta provider (`here` o `mock`), aplica cache y devuelve geometría + métricas.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## Rutas de UI principales
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+- `/dashboard`
+- `/dashboard/upload-csv`
+- `/dashboard/batches`
+- `/dashboard/batches/{routeBatch}`
+- `/dashboard/simulate`
 
-## Laravel Sponsors
+## Inicio rápido
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+### Opción recomendada: Sail (Docker)
 
-### Premium Partners
+```bash
+cp .env.example .env
+composer install
+./vendor/bin/sail up -d
+./vendor/bin/sail artisan key:generate
+./vendor/bin/sail artisan migrate
+./vendor/bin/sail npm install
+./vendor/bin/sail npm run dev
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+Abrir: `http://localhost`.
 
-## Contributing
+### Opción local sin Docker
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+cp .env.example .env
+composer install
+npm install
+php artisan key:generate
+php artisan migrate
+composer run dev
+```
 
-## Code of Conduct
+## Formatos CSV soportados (MVP)
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+### `type=drivers`
 
-## Security Vulnerabilities
+```csv
+external_id,name,email,phone
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### `type=invoices`
 
-## License
+```csv
+external_invoice_id,invoice_number,driver_external_id,driver_name,service_date,branch_code,historical_sequence,historical_latitude,historical_longitude
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Configuración de ruteo
+
+Variables relevantes en `.env`:
+
+```dotenv
+ROUTING_PROVIDER=auto
+HERE_API_KEY=
+ROUTING_CACHE_TTL_SECONDS=86400
+ROUTING_FALLBACK_DEPOT_NAME="CEDIS Fallback"
+ROUTING_FALLBACK_DEPOT_LAT=
+ROUTING_FALLBACK_DEPOT_LNG=
+```
+
+- `auto`: usa HERE si hay API key; si no, usa mock.
+- `here`: fuerza HERE y, si falla, cae a mock.
+- `mock`: une puntos y calcula ETA aproximada.
+
+## Pruebas y validación
+
+```bash
+php artisan test
+```
+
+Con Sail:
+
+```bash
+./vendor/bin/sail artisan test
+```
+
+Nota operativa:
+- No lances múltiples procesos independientes de `artisan test` en paralelo contra la misma base `testing` de PostgreSQL.
+- Si necesitas paralelismo, usa `php artisan test --parallel` o aísla la base de datos por proceso.
+
+Casos clave cubiertos:
+- `tests/Feature/Ingestion/CsvImportTest.php`
+- `tests/Feature/Simulation/SimulationPreviewTest.php`
+- `tests/Feature/HealthCheckTest.php`
+
+## Documentación adicional
+
+- Setup detallado: `docs/dev-setup.md`
+- Arquitectura técnica: `docs/architecture.md`
+- Guía para agentes de código: `AGENTS.md`

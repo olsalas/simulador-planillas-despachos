@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'here' => [
+        'api_key' => env('HERE_API_KEY'),
+    ],
+
 ];
