@@ -184,6 +184,20 @@ function clearMarkers() {
     markerEntries = [];
 }
 
+function removeRouteLayer() {
+    if (!map) {
+        return;
+    }
+
+    if (map.getLayer('planning-route-line')) {
+        map.removeLayer('planning-route-line');
+    }
+
+    if (map.getSource('planning-route-line')) {
+        map.removeSource('planning-route-line');
+    }
+}
+
 function clearMapPresentation() {
     clearMarkers();
 
@@ -191,13 +205,7 @@ function clearMapPresentation() {
         return;
     }
 
-    const routeSource = map.getSource('planning-route-line');
-    if (routeSource) {
-        routeSource.setData({
-            type: 'FeatureCollection',
-            features: [],
-        });
-    }
+    removeRouteLayer();
 }
 
 function withMapReady(callback) {
@@ -275,6 +283,7 @@ function updateMapForJourney() {
         }
 
         map.resize();
+        removeRouteLayer();
 
         const routeGeoJson = {
             type: 'FeatureCollection',
@@ -289,33 +298,26 @@ function updateMapForJourney() {
                 : [],
         };
 
-        if (!map.getSource('planning-route-line')) {
-            map.addSource('planning-route-line', {
-                type: 'geojson',
-                data: routeGeoJson,
-            });
+        map.addSource('planning-route-line', {
+            type: 'geojson',
+            data: routeGeoJson,
+        });
 
-            map.addLayer({
-                id: 'planning-route-line',
-                type: 'line',
-                source: 'planning-route-line',
-                layout: {
-                    'line-cap': 'round',
-                    'line-join': 'round',
-                },
-                paint: {
-                    'line-color': isMockProvider.value ? '#64748b' : '#0f766e',
-                    'line-width': 5,
-                    'line-opacity': isMockProvider.value ? 0.72 : 0.9,
-                    'line-dasharray': isMockProvider.value ? [1, 1.6] : [1, 0.001],
-                },
-            });
-        } else {
-            map.getSource('planning-route-line').setData(routeGeoJson);
-            map.setPaintProperty('planning-route-line', 'line-color', isMockProvider.value ? '#64748b' : '#0f766e');
-            map.setPaintProperty('planning-route-line', 'line-opacity', isMockProvider.value ? 0.72 : 0.9);
-            map.setPaintProperty('planning-route-line', 'line-dasharray', isMockProvider.value ? [1, 1.6] : [1, 0.001]);
-        }
+        map.addLayer({
+            id: 'planning-route-line',
+            type: 'line',
+            source: 'planning-route-line',
+            layout: {
+                'line-cap': 'round',
+                'line-join': 'round',
+            },
+            paint: {
+                'line-color': isMockProvider.value ? '#64748b' : '#0f766e',
+                'line-width': 5,
+                'line-opacity': isMockProvider.value ? 0.72 : 0.9,
+                'line-dasharray': isMockProvider.value ? [1, 1.6] : [1, 0.001],
+            },
+        });
 
         const depotElement = markerElement('D', '#111827');
         const depotPopup = new maplibregl.Popup({
