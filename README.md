@@ -94,16 +94,35 @@ Usuario seed de desarrollo:
 - email: `test@example.com`
 - password: `password`
 
-### Modo rapido para navegar desde Windows
+### Retomar una sesion de desarrollo
 
-Si no estas editando frontend, evita el Vite dev server:
+```bash
+git checkout main
+git pull origin main
+./vendor/bin/sail up -d
+./vendor/bin/sail artisan migrate
+```
+
+Luego elige:
+
+- si vas a tocar Vue/CSS: `./vendor/bin/sail npm run dev`
+- si solo vas a navegar y probar desde Windows:
 
 ```bash
 ./vendor/bin/sail npm run build
 rm -f public/hot
 ```
 
-En Windows + WSL esto suele cargar mucho mas rapido que `npm run dev`.
+### Detener el entorno local
+
+Si tienes `npm run dev` corriendo:
+- detener con `Ctrl+C` en esa terminal
+
+Luego:
+
+```bash
+./vendor/bin/sail down
+```
 
 ### Opcion local sin Docker
 

@@ -73,6 +73,30 @@ rm -f public/hot
 
 Usa el segundo modo cuando no estes tocando Vue o CSS. En Windows + WSL suele ser bastante mas rapido.
 
+### 5. Retomar una sesion de desarrollo
+
+```bash
+git checkout main
+git pull origin main
+./vendor/bin/sail up -d
+./vendor/bin/sail artisan migrate
+```
+
+Luego:
+- si vas a editar frontend: `./vendor/bin/sail npm run dev`
+- si solo vas a navegar/probar: `./vendor/bin/sail npm run build` y `rm -f public/hot`
+
+### 6. Detener entorno
+
+Si `npm run dev` sigue corriendo:
+- detener con `Ctrl+C`
+
+Luego bajar contenedores:
+
+```bash
+./vendor/bin/sail down
+```
+
 ## Opcion B: local sin Docker
 
 ```bash
@@ -105,6 +129,10 @@ Eso deja:
 Usuario seed de desarrollo:
 - email: `test@example.com`
 - password: `password`
+
+Con roles adicionales en `main`:
+- `planner@example.com` / `password`
+- `viewer@example.com` / `password`
 
 ## Validacion automatica
 
