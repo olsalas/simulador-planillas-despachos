@@ -47,18 +47,21 @@ const showingNavigationDropdown = ref(false);
                                     Cargar CSV
                                 </NavLink>
                                 <NavLink
+                                    v-if="$page.props.auth.abilities.view_batches"
                                     :href="route('ingestion.batches')"
                                     :active="route().current('ingestion.batches')"
                                 >
                                     Batches
                                 </NavLink>
                                 <NavLink
+                                    v-if="$page.props.auth.abilities.view_planning"
                                     :href="route('planning.scenarios.index')"
                                     :active="route().current('planning.scenarios.*')"
                                 >
                                     Planificar
                                 </NavLink>
                                 <NavLink
+                                    v-if="$page.props.auth.abilities.view_simulation"
                                     :href="route('simulation.run')"
                                     :active="route().current('simulation.run')"
                                 >
@@ -179,18 +182,21 @@ const showingNavigationDropdown = ref(false);
                             Cargar CSV
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
+                            v-if="$page.props.auth.abilities.view_batches"
                             :href="route('ingestion.batches')"
                             :active="route().current('ingestion.batches')"
                         >
                             Batches
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
+                            v-if="$page.props.auth.abilities.view_planning"
                             :href="route('planning.scenarios.index')"
                             :active="route().current('planning.scenarios.*')"
                         >
                             Planificar
                         </ResponsiveNavLink>
                         <ResponsiveNavLink
+                            v-if="$page.props.auth.abilities.view_simulation"
                             :href="route('simulation.run')"
                             :active="route().current('simulation.run')"
                         >
@@ -210,6 +216,9 @@ const showingNavigationDropdown = ref(false);
                             </div>
                             <div class="text-sm font-medium text-gray-500">
                                 {{ $page.props.auth.user.email }}
+                            </div>
+                            <div class="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-600">
+                                {{ $page.props.auth.user.role_label }}
                             </div>
                         </div>
 

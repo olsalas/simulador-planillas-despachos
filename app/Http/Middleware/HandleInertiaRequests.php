@@ -29,12 +29,25 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+
         return [
             ...parent::share($request),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $user ? [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'email_verified_at' => $user->email_verified_at?->toIso8601String(),
+                    'role' => $user->role,
+                    'role_label' => $user->roleLabel(),
+                ] : null,
                 'abilities' => [
-                    'upload_csv' => $request->user()?->can('upload-csv') ?? false,
+                    'view_batches' => $user?->can('view-batches') ?? false,
+                    'view_simulation' => $user?->can('view-simulation') ?? false,
+                    'view_planning' => $user?->can('view-planning') ?? false,
+                    'manage_planning' => $user?->can('manage-planning') ?? false,
+                    'upload_csv' => $user?->can('upload-csv') ?? false,
                 ],
             ],
             'flash' => [
