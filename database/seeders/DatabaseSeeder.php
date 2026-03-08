@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -15,21 +16,39 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        $defaultPassword = Hash::make('password');
 
-        User::factory()->admin()->create([
-            'name' => 'Test Admin',
-            'email' => 'test@example.com',
-        ]);
+        User::query()->updateOrCreate(
+            ['email' => 'test@example.com'],
+            [
+                'name' => 'Test Admin',
+                'password' => $defaultPassword,
+                'role' => User::ROLE_ADMIN,
+                'can_upload_csv' => true,
+                'email_verified_at' => now(),
+            ]
+        );
 
-        User::factory()->planner()->create([
-            'name' => 'Planner Demo',
-            'email' => 'planner@example.com',
-        ]);
+        User::query()->updateOrCreate(
+            ['email' => 'planner@example.com'],
+            [
+                'name' => 'Planner Demo',
+                'password' => $defaultPassword,
+                'role' => User::ROLE_PLANNER,
+                'can_upload_csv' => false,
+                'email_verified_at' => now(),
+            ]
+        );
 
-        User::factory()->viewer()->create([
-            'name' => 'Viewer Demo',
-            'email' => 'viewer@example.com',
-        ]);
+        User::query()->updateOrCreate(
+            ['email' => 'viewer@example.com'],
+            [
+                'name' => 'Viewer Demo',
+                'password' => $defaultPassword,
+                'role' => User::ROLE_VIEWER,
+                'can_upload_csv' => false,
+                'email_verified_at' => now(),
+            ]
+        );
     }
 }
