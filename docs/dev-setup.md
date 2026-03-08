@@ -1,24 +1,24 @@
 # Desarrollo local
 
-Este documento describe cómo levantar el proyecto en local con y sin Docker.
+Este documento describe como levantar, validar y probar el proyecto en local.
 
 ## Prerrequisitos
 
 - `PHP 8.2+`
 - `Composer`
 - `Node.js 20+` y `npm`
-- Opcional (recomendado): `Docker` + `Docker Compose` para usar Sail
+- recomendado: `Docker` + `Docker Compose` para usar Sail
 
-## Opción A: Sail (recomendada)
+## Opcion A: Sail
 
-### 1) Preparar entorno
+### 1. Preparar entorno
 
 ```bash
 cp .env.example .env
 composer install
 ```
 
-Ajusta la sección DB en `.env` para Sail:
+Ajusta `.env` para Sail:
 
 ```dotenv
 DB_CONNECTION=pgsql
@@ -34,147 +34,183 @@ SESSION_DRIVER=redis
 REDIS_HOST=redis
 ```
 
-### 2) Levantar contenedores
+Si quieres routing vial real:
+
+```dotenv
+ROUTING_PROVIDER=auto
+HERE_API_KEY=tu_api_key
+```
+
+### 2. Levantar contenedores
 
 ```bash
 ./vendor/bin/sail up -d
 ./vendor/bin/sail ps
 ```
 
-### 3) Inicializar aplicación
+### 3. Inicializar aplicacion
 
 ```bash
 ./vendor/bin/sail artisan key:generate
-./vendor/bin/sail artisan migrate
+./vendor/bin/sail artisan migrate --seed
 ./vendor/bin/sail npm install
 ```
 
-### 4) Frontend (Vite)
+### 4. Elegir modo frontend
+
+Modo de desarrollo frontend:
 
 ```bash
 ./vendor/bin/sail npm run dev
 ```
 
-Build de assets:
-
-```bash
-./vendor/bin/sail npm run build
-```
-
-### 5) Elegir modo de trabajo frontend
-
-Modo de edición frontend:
-
-```bash
-./vendor/bin/sail npm run dev
-```
-
-Usa este modo cuando estés tocando Vue, CSS o UX y necesites HMR.
-
-Modo rápido para navegar y validar flujos:
+Modo rapido para navegar y probar desde Windows:
 
 ```bash
 ./vendor/bin/sail npm run build
 rm -f public/hot
 ```
 
-Usa este modo cuando no estés editando frontend activamente. En Windows + WSL suele sentirse bastante más rápido porque el navegador deja de depender del Vite dev server y de cientos de módulos servidos en caliente.
+Usa el segundo modo cuando no estes tocando Vue o CSS. En Windows + WSL suele ser bastante mas rapido.
 
-## Opción B: local sin Docker
-
-Esta opción usa SQLite por defecto (`.env.example` ya viene preparado para eso).
-
-### 1) Instalar dependencias
+## Opcion B: local sin Docker
 
 ```bash
 cp .env.example .env
 composer install
 npm install
-```
-
-### 2) Inicializar aplicación
-
-```bash
 php artisan key:generate
-php artisan migrate
-```
-
-### 3) Levantar entorno de desarrollo
-
-```bash
+php artisan migrate --seed
 composer run dev
 ```
 
-## Tests
+## Datos de demo
+
+Para probar el flujo completo de demo:
+
+```bash
+./vendor/bin/sail php scripts/prepare_import_files.php
+./vendor/bin/sail artisan demo:load-generated-data
+```
+
+Eso deja:
+- `depots`
+- `branches`
+- `drivers`
+- `invoices`
+- `route_batches`
+- `invoice_stops`
+- asignaciones `driver -> depot`
+
+Usuario seed de desarrollo:
+- email: `test@example.com`
+- password: `password`
+
+## Validacion automatica
 
 Suite completa:
 
 ```bash
-php artisan test
+./vendor/bin/sail artisan test
+./vendor/bin/sail npm run build
 ```
 
-Con Sail:
+Tests por flujo:
 
 ```bash
-./vendor/bin/sail artisan test
+./vendor/bin/sail artisan test --filter=CsvImportTest
+./vendor/bin/sail artisan test --filter=SimulationPreviewTest
+./vendor/bin/sail artisan test --filter=JourneyComparisonTest
+./vendor/bin/sail artisan test --filter=PlanningScenarioTest
+./vendor/bin/sail artisan test --filter=HealthCheckTest
 ```
 
 Nota operativa:
-- Evita correr varios comandos independientes de `artisan test` al mismo tiempo contra la misma base `testing` en PostgreSQL.
-- El flujo validado del proyecto es secuencial.
-- Si se quiere paralelizar, debe hacerse con `artisan test --parallel` o con bases aisladas por proceso.
+- no ejecutes varios comandos independientes de `artisan test` en paralelo contra la misma base `testing`
+- si necesitas paralelismo, usa `artisan test --parallel`
 
-Tests clave por flujo:
+## Validacion manual minima
+
+### A. Comparador historico
+
+1. Navega a `/dashboard/simulate`
+2. Filtra por fecha o conductor
+3. Selecciona una jornada
+4. Verifica:
+   - metricas historico vs sugerido
+   - delta
+   - provider activo
+   - no comparables
+   - excluidas
+   - mapa con popups y seleccion sincronizada
+
+### B. Planillado diario
+
+1. Navega a `/dashboard/planning-scenarios`
+2. Elige fecha y depot
+3. Crea o refresca el escenario
+4. Entra al detalle
+5. Usa `Generar propuesta base`
+6. Verifica:
+   - resumen del escenario
+   - conductores activos del depot
+   - jornadas propuestas
+   - paradas no asignadas
+   - paradas excluidas
+   - mapa de la propuesta con cambio de conductor
+
+## Inspeccion de datos
+
+Herramienta recomendada:
+- `DBeaver` conectado a PostgreSQL local
+
+Conexion local con Sail:
+- Host: `localhost`
+- Port: `5432`
+- Database: `ruteo`
+- Username: `sail`
+- Password: `password`
+
+Tablas clave para revisar:
+- `drivers`
+- `depots`
+- `branches`
+- `invoices`
+- `route_batches`
+- `invoice_stops`
+- `planning_scenarios`
+- `planning_scenario_stops`
+- `planning_scenario_journeys`
+
+## Playwright y validacion UX
+
+Playwright sirve bien para validar formularios, listas y payloads, pero en este entorno Firefox headless bajo WSL no siempre logra crear contexto `WebGL`.
+
+Consecuencia:
+- sirve para validar flujo y datos
+- no siempre sirve para confirmar visualmente el mapa
+
+Para revisar el mapa, prioriza:
+- navegador real en Windows
+- `http://localhost`
+
+## Problemas conocidos
+
+### La app carga lenta desde Windows
+
+Usa:
 
 ```bash
-php artisan test --filter=CsvImportTest
-php artisan test --filter=SimulationPreviewTest
-php artisan test --filter=HealthCheckTest
+./vendor/bin/sail npm run build
+rm -f public/hot
 ```
 
-## Formatos CSV soportados (MVP)
+Normalmente mejora bastante frente a Vite HMR.
 
-### Conductores (`type=drivers`)
+### El mapa sale con linea recta
 
-Headers esperados:
+Revisa:
+- `ROUTING_PROVIDER`
+- `HERE_API_KEY`
 
-```csv
-external_id,name,email,phone
-```
-
-### Facturas (`type=invoices`)
-
-Headers esperados:
-
-```csv
-external_invoice_id,invoice_number,driver_external_id,driver_name,service_date,branch_code,historical_sequence,historical_latitude,historical_longitude
-```
-
-## Simulación con mapa
-
-Variables opcionales en `.env`:
-
-```dotenv
-ROUTING_PROVIDER=auto
-HERE_API_KEY=
-ROUTING_CACHE_TTL_SECONDS=86400
-ROUTING_FALLBACK_DEPOT_NAME="CEDIS Fallback"
-ROUTING_FALLBACK_DEPOT_LAT=
-ROUTING_FALLBACK_DEPOT_LNG=
-```
-
-- `ROUTING_PROVIDER=auto`: usa HERE si hay API key; si no, usa mock.
-- `ROUTING_PROVIDER=here`: fuerza HERE (si falla o no hay key, cae a mock).
-- `ROUTING_PROVIDER=mock`: siempre une puntos (solo UI/demo).
-
-## Validación manual mínima
-
-1. Crea/asegura un `depot` con lat/lng y un `route_batch` con `invoice_stops` geocodificados.
-2. Navega a `/dashboard/simulate`.
-3. Selecciona batch y ejecuta `Generar ruta`.
-4. Verifica en el mapa:
-   - Marker `D` (depot)
-   - Markers numerados de paradas
-   - Polilínea de ruta
-5. Repite la misma simulación y confirma `cache: hit` en panel.
-6. Para validar ruta de calle real (no líneas rectas), define `HERE_API_KEY` y usa `ROUTING_PROVIDER=here` o `auto`.
+Si el provider activo es `mock`, la ruta es una aproximacion y la UI lo indica.

@@ -1,73 +1,151 @@
 # Ruteo
 
-MVP para **ingesta de históricos de facturación** y **simulación de rutas por conductor + día**.
+Aplicacion Laravel + Inertia/Vue para construir un asistente de planillado logistico en dos capas:
 
-La app permite:
-1. Cargar CSV de conductores y facturas.
-2. Consolidar lotes (`route_batches`) y paradas (`invoice_stops`).
-3. Simular una ruta en mapa con proveedor real (HERE) o mock.
+1. `Comparador historico`
+   Permite ver `como fue` una jornada historica de conductor + dia y compararla contra `como pudo ser` con una secuencia sugerida mejor.
+2. `Planillado diario`
+   Permite crear un escenario por `fecha + depot`, generar una propuesta base de asignacion y visualizar las jornadas propuestas en mapa.
 
-## Stack técnico
+La ingesta CSV sigue siendo importante, pero ya no es el unico valor del producto. Hoy el repo ya soporta:
+- carga de historicos (`drivers` e `invoices`),
+- consolidacion operativa,
+- comparacion historica vs sugerida,
+- generacion de escenarios diarios por depot,
+- propuesta base de asignacion a conductores,
+- visualizacion de rutas en mapa con HERE o fallback `mock`.
 
-- Backend: `Laravel 12`, `PHP 8.2+`.
-- Frontend: `Inertia.js 2`, `Vue 3`, `Vite`, `Tailwind CSS`.
-- Persistencia: `PostgreSQL` (Sail) o `SQLite` (local rápido/testing).
-- Cache/colas en local Docker: `Redis`.
-- Mapa: `maplibre-gl` con tiles OSM.
+## Stack tecnico
 
-## Flujo funcional
+- Backend: `Laravel 12`, `PHP 8.2+`
+- Frontend: `Inertia.js 2`, `Vue 3`, `Vite`, `Tailwind CSS`
+- Base de datos local recomendada: `PostgreSQL`
+- Cache local con Sail: `Redis`
+- Mapa: `MapLibre GL` con tiles OSM
+- Routing:
+  - `HERE` si hay `HERE_API_KEY`
+  - `mock` como fallback o modo demo
 
-1. `POST /dashboard/upload-csv` procesa un CSV (`drivers` o `invoices`).
-2. `CsvIngestionService` valida fila por fila y persiste `ingestion_batches` + `ingestion_rows`.
-3. Para facturas, se actualizan `invoices`, se clasifican outliers y se consolida `route_batches` + `invoice_stops`.
-4. `POST /dashboard/simulate/preview` construye la ruta para un batch usando `BuildSimulationRouteService`.
-5. El servicio resuelve depósito, ejecuta provider (`here` o `mock`), aplica cache y devuelve geometría + métricas.
+## Capacidades actuales
 
-## Rutas de UI principales
+### 1. Ingesta historica
+
+- Carga CSV de `drivers`
+- Carga CSV de `invoices`
+- Trazabilidad por `ingestion_batches` e `ingestion_rows`
+- Reconstruccion de:
+  - `route_batches`
+  - `invoice_stops`
+
+### 2. Comparador historico
+
+Pantalla: `/dashboard/simulate`
+
+Permite:
+- filtrar jornadas historicas por fecha y conductor,
+- comparar `Como fue` vs `Como pudo ser`,
+- ver metricas y delta,
+- ver paradas no comparables y excluidas,
+- visualizar la ruta en mapa,
+- abrir popups de puntos y sincronizar lista con mapa.
+
+### 3. Escenarios de planillado diario
+
+Pantallas:
+- `/dashboard/planning-scenarios`
+- `/dashboard/planning-scenarios/{id}`
+
+Permite:
+- crear o refrescar un snapshot por `fecha + depot`,
+- persistir demanda candidata, excluidas y conductores del depot,
+- generar una propuesta base de asignacion,
+- crear jornadas propuestas por conductor,
+- ver rutas sugeridas en mapa por jornada,
+- revisar paradas candidatas, no asignadas y excluidas.
+
+## Rutas principales de UI
 
 - `/dashboard`
 - `/dashboard/upload-csv`
 - `/dashboard/batches`
 - `/dashboard/batches/{routeBatch}`
 - `/dashboard/simulate`
+- `/dashboard/planning-scenarios`
+- `/dashboard/planning-scenarios/{planningScenario}`
 
-## Inicio rápido
+## Inicio rapido
 
-### Opción recomendada: Sail (Docker)
+### Opcion recomendada: Sail
 
 ```bash
 cp .env.example .env
 composer install
 ./vendor/bin/sail up -d
 ./vendor/bin/sail artisan key:generate
-./vendor/bin/sail artisan migrate
+./vendor/bin/sail artisan migrate --seed
 ./vendor/bin/sail npm install
 ./vendor/bin/sail npm run dev
 ```
 
-Abrir: `http://localhost`.
+Abrir:
+- `http://localhost`
 
-Modo más rápido para navegar localmente desde Windows:
+Usuario seed de desarrollo:
+- email: `test@example.com`
+- password: `password`
+
+### Modo rapido para navegar desde Windows
+
+Si no estas editando frontend, evita el Vite dev server:
 
 ```bash
 ./vendor/bin/sail npm run build
 rm -f public/hot
 ```
 
-Usa ese modo cuando no estés editando frontend. Evita el Vite dev server y normalmente reduce bastante la latencia percibida entre Windows y WSL.
+En Windows + WSL esto suele cargar mucho mas rapido que `npm run dev`.
 
-### Opción local sin Docker
+### Opcion local sin Docker
 
 ```bash
 cp .env.example .env
 composer install
 npm install
 php artisan key:generate
-php artisan migrate
+php artisan migrate --seed
 composer run dev
 ```
 
-## Formatos CSV soportados (MVP)
+## Datos demo y carga reproducible
+
+El repo incluye un flujo reproducible para preparar y cargar datos de demo desde los extracts del sistema origen.
+
+Preparar archivos normalizados:
+
+```bash
+./vendor/bin/sail php scripts/prepare_import_files.php
+```
+
+Salida local:
+- `docs/generated/depots_seed.csv`
+- `docs/generated/driver_depot_assignment_ready.csv`
+- `docs/generated/drivers_import.csv`
+- `docs/generated/branches_seed.csv`
+- `docs/generated/invoices_import.csv`
+
+Cargar demo local:
+
+```bash
+./vendor/bin/sail artisan demo:load-generated-data
+```
+
+Notas:
+- hace `upsert` de `branches` y `depots`
+- aplica asignaciones `driver -> depot`
+- importa `drivers` e `invoices` con el flujo real de ingesta
+- carga facturas por chunks para evitar limites de locks en PostgreSQL
+
+## CSV soportados hoy
 
 ### `type=drivers`
 
@@ -81,44 +159,17 @@ external_id,name,email,phone
 external_invoice_id,invoice_number,driver_external_id,driver_name,service_date,branch_code,historical_sequence,historical_latitude,historical_longitude
 ```
 
-Plantillas listas para normalizar archivos del sistema origen:
+Plantillas:
 - `docs/templates/depots_template.csv`
 - `docs/templates/driver_depot_assignment_template.csv`
 - `docs/templates/branches_template.csv`
 - `docs/templates/drivers_template.csv`
 - `docs/templates/invoices_template.csv`
 
-Mapa de campos desde los extracts del sistema origen:
+Mapa de campos desde sistema origen:
 - `docs/import-source-mapping.md`
 
-Preparación local de imports desde extracts reales:
-
-```bash
-./vendor/bin/sail php scripts/prepare_import_files.php
-```
-
-Salida local:
-- `docs/generated/depots_seed_candidates.csv`
-- `docs/generated/depots_seed.csv`
-- `docs/generated/driver_depot_candidates.csv`
-- `docs/generated/driver_depot_assignment_review.csv`
-- `docs/generated/driver_depot_assignment_ready.csv`
-- `docs/generated/drivers_import.csv`
-- `docs/generated/branches_seed.csv`
-- `docs/generated/invoices_import.csv`
-
-Carga reproducible de demo local:
-
-```bash
-./vendor/bin/sail artisan demo:load-generated-data
-```
-
-Notas:
-- el comando hace `upsert` de `branches` y `depots`
-- importa `drivers` e `invoices` usando el flujo real de `CsvIngestionService`
-- las facturas se cargan por chunks para evitar el límite de locks de PostgreSQL en un solo transaction batch
-
-## Configuración de ruteo
+## Configuracion de routing
 
 Variables relevantes en `.env`:
 
@@ -131,33 +182,56 @@ ROUTING_FALLBACK_DEPOT_LAT=
 ROUTING_FALLBACK_DEPOT_LNG=
 ```
 
-- `auto`: usa HERE si hay API key; si no, usa mock.
-- `here`: fuerza HERE y, si falla, cae a mock.
-- `mock`: une puntos y calcula ETA aproximada.
+Comportamiento:
+- `auto`: usa HERE si hay key; si no, `mock`
+- `here`: intenta HERE y si falla, cae a `mock`
+- `mock`: conecta puntos y devuelve una aproximacion
 
-## Pruebas y validación
+## Validacion minima
 
-```bash
-php artisan test
-```
-
-Con Sail:
+Suite completa:
 
 ```bash
 ./vendor/bin/sail artisan test
+./vendor/bin/sail npm run build
+```
+
+Tests utiles por flujo:
+
+```bash
+./vendor/bin/sail artisan test --filter=CsvImportTest
+./vendor/bin/sail artisan test --filter=SimulationPreviewTest
+./vendor/bin/sail artisan test --filter=JourneyComparisonTest
+./vendor/bin/sail artisan test --filter=PlanningScenarioTest
+./vendor/bin/sail artisan test --filter=HealthCheckTest
 ```
 
 Nota operativa:
-- No lances múltiples procesos independientes de `artisan test` en paralelo contra la misma base `testing` de PostgreSQL.
-- Si necesitas paralelismo, usa `php artisan test --parallel` o aísla la base de datos por proceso.
+- no lances procesos independientes de `artisan test` en paralelo contra la misma base `testing`
+- si necesitas paralelismo, usa `artisan test --parallel`
 
-Casos clave cubiertos:
-- `tests/Feature/Ingestion/CsvImportTest.php`
-- `tests/Feature/Simulation/SimulationPreviewTest.php`
-- `tests/Feature/HealthCheckTest.php`
+## Flujo recomendado para probar hoy
 
-## Documentación adicional
+### A. Comparador historico
 
-- Setup detallado: `docs/dev-setup.md`
-- Arquitectura técnica: `docs/architecture.md`
-- Guía para agentes de código: `AGENTS.md`
+1. Entrar a `/dashboard/simulate`
+2. Filtrar por fecha y conductor
+3. Seleccionar una jornada
+4. Comparar `Como fue` vs `Como pudo ser`
+5. Revisar delta, no comparables, excluidas y mapa
+
+### B. Planillado diario
+
+1. Entrar a `/dashboard/planning-scenarios`
+2. Elegir fecha y depot
+3. Crear o refrescar escenario
+4. Entrar al detalle
+5. Generar propuesta base
+6. Revisar jornadas propuestas, no asignadas, excluidas y mapa por conductor
+
+## Documentacion adicional
+
+- Setup y validacion local: `docs/dev-setup.md`
+- Arquitectura actual: `docs/architecture.md`
+- Guia para usuario operativo: `docs/operator-testing-guide.md`
+- Guia para agentes: `AGENTS.md`
