@@ -51,7 +51,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Gate::define('upload-csv', fn (User $user): bool => $user->can_upload_csv);
+        Gate::define('view-batches', fn (User $user): bool => $user->appAbilities()['view_batches']);
+        Gate::define('view-simulation', fn (User $user): bool => $user->appAbilities()['view_simulation']);
+        Gate::define('view-planning', fn (User $user): bool => $user->appAbilities()['view_planning']);
+        Gate::define('manage-planning', fn (User $user): bool => $user->appAbilities()['manage_planning']);
+        Gate::define('upload-csv', fn (User $user): bool => $user->appAbilities()['upload_csv']);
 
         if (! $this->app->isLocal()) {
             Vite::prefetch(concurrency: 3);

@@ -69,7 +69,7 @@ class PlanningScenarioTest extends TestCase
 
     public function test_it_creates_and_refreshes_a_planning_scenario_snapshot(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->planner()->create();
 
         $depot = Depot::create([
             'code' => 'DEP-01',
@@ -276,7 +276,7 @@ class PlanningScenarioTest extends TestCase
             'routing.provider' => 'mock',
         ]);
 
-        $user = User::factory()->create();
+        $user = User::factory()->planner()->create();
 
         $depot = Depot::create([
             'code' => 'DEP-01',

@@ -82,6 +82,7 @@ function configLabel(key, value) {
 
                 <div class="flex flex-wrap gap-3">
                     <button
+                        v-if="$page.props.auth.abilities.manage_planning"
                         type="button"
                         class="inline-flex items-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:bg-sky-300"
                         :disabled="allocationForm.processing || candidateStops.length === 0"
@@ -185,6 +186,13 @@ function configLabel(key, value) {
                         <div class="mt-6 rounded-xl bg-sky-50 p-4 text-sm text-sky-900">
                             El escenario queda listo para generar una propuesta base usando un barrido angular desde el depot y secuenciacion
                             vial por vecino mas cercano. Es una primera heuristica explicable, no el optimizador final.
+                        </div>
+
+                        <div
+                            v-if="!$page.props.auth.abilities.manage_planning"
+                            class="mt-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+                        >
+                            Tu rol actual es de consulta. Puedes revisar este escenario, pero no regenerar la propuesta base.
                         </div>
                     </div>
 

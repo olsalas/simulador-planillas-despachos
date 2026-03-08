@@ -38,6 +38,18 @@ function statusLabel(status) {
         return 'Snapshot listo';
     }
 
+    if (status === 'allocation_ready') {
+        return 'Propuesta lista';
+    }
+
+    if (status === 'allocation_partial') {
+        return 'Propuesta parcial';
+    }
+
+    if (status === 'allocation_blocked') {
+        return 'Propuesta bloqueada';
+    }
+
     if (status === 'empty') {
         return 'Sin demanda';
     }
@@ -73,12 +85,23 @@ function statusLabel(status) {
                                 Crear o refrescar escenario base
                             </h3>
                             <p class="text-sm text-gray-600">
-                                Esta primera capa no asigna aun las paradas a conductores. Deja persistido el corte operativo del dia:
-                                demanda candidata, paradas elegibles, excluidas y conductores activos del depot.
+                                El escenario deja persistido el corte operativo del dia para un depot: demanda candidata,
+                                paradas elegibles, excluidas y conductores activos que luego alimentan la propuesta base.
                             </p>
                         </div>
 
-                        <form class="mt-6 grid gap-4 md:grid-cols-2" @submit.prevent="submit">
+                        <div
+                            v-if="!$page.props.auth.abilities.manage_planning"
+                            class="mt-6 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-900"
+                        >
+                            Tu rol actual es de consulta. Puedes revisar escenarios existentes, pero no crear ni refrescar snapshots.
+                        </div>
+
+                        <form
+                            v-else
+                            class="mt-6 grid gap-4 md:grid-cols-2"
+                            @submit.prevent="submit"
+                        >
                             <label class="flex flex-col gap-2 text-sm font-medium text-gray-700">
                                 Fecha de servicio
                                 <input
@@ -133,12 +156,12 @@ function statusLabel(status) {
                             <li>Persistencia de escenarios por fecha + depot.</li>
                             <li>Snapshot de demanda agrupada por paradas usando branches geocodificados.</li>
                             <li>Identificacion explicita de paradas excluidas por calidad de datos.</li>
-                            <li>Conteos operativos para preparar el motor de asignacion de la siguiente fase.</li>
+                            <li>Propuesta base de asignacion a conductores activos del depot.</li>
                         </ul>
 
                         <div class="mt-5 rounded-xl bg-sky-50 p-4 text-sm text-sky-900">
                             La fuente de demanda de esta version usa las facturas historicas del dia asociadas a conductores del depot.
-                            En la siguiente fase lo desacoplaremos hacia una propuesta real de planillado diario.
+                            El siguiente salto es desacoplarla hacia una propuesta operativa independiente del historico.
                         </div>
                     </div>
                 </section>

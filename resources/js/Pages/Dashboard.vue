@@ -18,7 +18,7 @@ import { Head, Link } from '@inertiajs/vue3';
         <div class="py-12">
             <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                 <p class="mb-6 text-sm text-gray-600">
-                    MVP base para carga de históricos y simulación por conductor + día.
+                    Punto de entrada para históricos, comparador de jornadas y propuesta diaria de planillado.
                 </p>
 
                 <div class="grid gap-4 md:grid-cols-4">
@@ -38,7 +38,10 @@ import { Head, Link } from '@inertiajs/vue3';
                         </Link>
                     </div>
 
-                    <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                    <div
+                        v-if="$page.props.auth.abilities.view_batches"
+                        class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+                    >
                         <h3 class="text-base font-semibold text-gray-900">Ver Batches</h3>
                         <p class="mt-2 text-sm text-gray-600">
                             Revisar lotes de ingestión y su estado.
@@ -51,10 +54,13 @@ import { Head, Link } from '@inertiajs/vue3';
                         </Link>
                     </div>
 
-                    <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                    <div
+                        v-if="$page.props.auth.abilities.view_planning"
+                        class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+                    >
                         <h3 class="text-base font-semibold text-gray-900">Planificar por depot</h3>
                         <p class="mt-2 text-sm text-gray-600">
-                            Crear escenarios diarios por fecha y CEDIS para preparar el nuevo motor de planillado.
+                            Crear o revisar escenarios diarios por fecha y CEDIS.
                         </p>
                         <Link
                             :href="route('planning.scenarios.index')"
@@ -64,10 +70,13 @@ import { Head, Link } from '@inertiajs/vue3';
                         </Link>
                     </div>
 
-                    <div class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm">
+                    <div
+                        v-if="$page.props.auth.abilities.view_simulation"
+                        class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
+                    >
                         <h3 class="text-base font-semibold text-gray-900">Simular (conductor+día)</h3>
                         <p class="mt-2 text-sm text-gray-600">
-                            Ejecutar simulación con retorno al CEDIS por defecto.
+                            Comparar cómo fue una jornada y cómo pudo haberse recorrido mejor.
                         </p>
                         <Link
                             :href="route('simulation.run')"

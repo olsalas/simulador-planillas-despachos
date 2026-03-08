@@ -36,17 +36,26 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/dashboard/upload-csv', [UploadCsvController::class, 'store'])->name('ingestion.upload.store');
     });
 
-    Route::get('/dashboard/batches', [BatchController::class, 'index'])->name('ingestion.batches');
-    Route::get('/dashboard/batches/{routeBatch}', [BatchController::class, 'show'])->name('ingestion.batches.show');
+    Route::middleware('can:view-batches')->group(function () {
+        Route::get('/dashboard/batches', [BatchController::class, 'index'])->name('ingestion.batches');
+        Route::get('/dashboard/batches/{routeBatch}', [BatchController::class, 'show'])->name('ingestion.batches.show');
+    });
 
-    Route::get('/dashboard/planning-scenarios', [PlanningScenarioController::class, 'index'])->name('planning.scenarios.index');
-    Route::post('/dashboard/planning-scenarios', [PlanningScenarioController::class, 'store'])->name('planning.scenarios.store');
-    Route::get('/dashboard/planning-scenarios/{planningScenario}', [PlanningScenarioController::class, 'show'])->name('planning.scenarios.show');
-    Route::post('/dashboard/planning-scenarios/{planningScenario}/allocate', [PlanningScenarioController::class, 'allocate'])->name('planning.scenarios.allocate');
+    Route::middleware('can:view-planning')->group(function () {
+        Route::get('/dashboard/planning-scenarios', [PlanningScenarioController::class, 'index'])->name('planning.scenarios.index');
+        Route::get('/dashboard/planning-scenarios/{planningScenario}', [PlanningScenarioController::class, 'show'])->name('planning.scenarios.show');
+    });
 
-    Route::get('/dashboard/simulate', [SimulationController::class, 'index'])->name('simulation.run');
-    Route::post('/dashboard/simulate/preview', [SimulationController::class, 'preview'])->name('simulation.preview');
-    Route::post('/dashboard/simulate/compare', [SimulationController::class, 'compare'])->name('simulation.compare');
+    Route::middleware('can:manage-planning')->group(function () {
+        Route::post('/dashboard/planning-scenarios', [PlanningScenarioController::class, 'store'])->name('planning.scenarios.store');
+        Route::post('/dashboard/planning-scenarios/{planningScenario}/allocate', [PlanningScenarioController::class, 'allocate'])->name('planning.scenarios.allocate');
+    });
+
+    Route::middleware('can:view-simulation')->group(function () {
+        Route::get('/dashboard/simulate', [SimulationController::class, 'index'])->name('simulation.run');
+        Route::post('/dashboard/simulate/preview', [SimulationController::class, 'preview'])->name('simulation.preview');
+        Route::post('/dashboard/simulate/compare', [SimulationController::class, 'compare'])->name('simulation.compare');
+    });
 });
 
 Route::middleware('auth')->group(function () {

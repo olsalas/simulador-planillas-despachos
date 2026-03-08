@@ -17,10 +17,19 @@ class DatabaseSeeder extends Seeder
     {
         // User::factory(10)->create();
 
-        User::factory()->create([
-            'name' => 'Test User',
+        User::factory()->admin()->create([
+            'name' => 'Test Admin',
             'email' => 'test@example.com',
-            'can_upload_csv' => true,
+        ]);
+
+        User::factory()->planner()->create([
+            'name' => 'Planner Demo',
+            'email' => 'planner@example.com',
+        ]);
+
+        User::factory()->viewer()->create([
+            'name' => 'Viewer Demo',
+            'email' => 'viewer@example.com',
         ]);
     }
 }
