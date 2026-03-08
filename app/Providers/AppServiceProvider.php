@@ -9,7 +9,6 @@ use App\Domain\Routing\Support\FlexiblePolylineDecoder;
 use App\Models\User;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -56,9 +55,5 @@ class AppServiceProvider extends ServiceProvider
         Gate::define('view-planning', fn (User $user): bool => $user->appAbilities()['view_planning']);
         Gate::define('manage-planning', fn (User $user): bool => $user->appAbilities()['manage_planning']);
         Gate::define('upload-csv', fn (User $user): bool => $user->appAbilities()['upload_csv']);
-
-        if (! $this->app->isLocal()) {
-            Vite::prefetch(concurrency: 3);
-        }
     }
 }
