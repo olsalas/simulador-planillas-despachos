@@ -200,6 +200,19 @@ function clearMapPresentation() {
     }
 }
 
+function withMapReady(callback) {
+    if (!map) {
+        return;
+    }
+
+    if (map.isStyleLoaded()) {
+        callback();
+        return;
+    }
+
+    map.once('load', callback);
+}
+
 function closePopups(except = null) {
     for (const entry of markerEntries) {
         if (entry !== except) {
@@ -386,12 +399,7 @@ function updateMapForJourney() {
         }
     };
 
-    if (map.loaded()) {
-        draw();
-        return;
-    }
-
-    map.once('load', draw);
+    withMapReady(draw);
 }
 
 function scheduleMapRefresh() {
