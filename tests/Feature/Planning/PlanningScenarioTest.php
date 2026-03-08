@@ -462,4 +462,104 @@ class PlanningScenarioTest extends TestCase
                 ->has('unassignedStops', 0)
             );
     }
+
+    public function test_it_rebuilds_route_preview_for_existing_planning_journeys_without_map_payload(): void
+    {
+        config([
+            'routing.provider' => 'mock',
+        ]);
+
+        $user = User::factory()->create();
+
+        $depot = Depot::create([
+            'code' => 'DEP-01',
+            'name' => 'Depot Norte',
+            'address' => 'Calle 1',
+            'latitude' => 4.7110,
+            'longitude' => -74.0721,
+            'is_active' => true,
+        ]);
+
+        $driver = Driver::create([
+            'external_id' => 'DRV-ALPHA',
+            'name' => 'Alpha',
+            'depot_id' => $depot->id,
+            'is_active' => true,
+        ]);
+
+        $branch = Branch::create([
+            'code' => 'BR-01',
+            'name' => 'Sucursal Centro',
+            'address' => 'Centro 1',
+            'latitude' => 4.7200,
+            'longitude' => -74.0600,
+        ]);
+
+        $scenario = PlanningScenario::create([
+            'depot_id' => $depot->id,
+            'created_by' => $user->id,
+            'service_date' => '2026-03-07',
+            'name' => '2026-03-07 | Depot Norte',
+            'status' => 'allocation_ready',
+            'configuration' => [
+                'return_to_depot' => true,
+            ],
+            'summary' => [
+                'total_invoices' => 2,
+                'eligible_invoices' => 2,
+                'excluded_invoices' => 0,
+                'eligible_stops' => 1,
+                'excluded_stops' => 0,
+                'active_drivers_in_depot' => 1,
+                'proposed_journeys' => 1,
+            ],
+            'last_generated_at' => now(),
+        ]);
+
+        $journey = $scenario->journeys()->create([
+            'driver_id' => $driver->id,
+            'name' => 'Jornada propuesta 01 · Alpha',
+            'status' => 'generated',
+            'total_stops' => 1,
+            'total_invoices' => 2,
+            'summary' => [
+                'provider' => 'mock',
+                'return_to_depot' => true,
+                'cache_hit' => false,
+                'distance_meters' => 1200,
+                'duration_seconds' => 180,
+            ],
+        ]);
+
+        $scenario->stops()->create([
+            'planning_scenario_journey_id' => $journey->id,
+            'assigned_driver_id' => $driver->id,
+            'stop_key' => 'branch:'.$branch->id,
+            'branch_id' => $branch->id,
+            'status' => 'assigned',
+            'branch_code' => $branch->code,
+            'branch_name' => $branch->name,
+            'branch_address' => $branch->address,
+            'latitude' => $branch->latitude,
+            'longitude' => $branch->longitude,
+            'invoice_count' => 2,
+            'historical_sequence_min' => 3,
+            'suggested_sequence' => 1,
+            'assignment_reason' => 'legacy_summary_without_route_preview',
+            'invoice_ids' => [201, 202],
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('planning.scenarios.show', $scenario))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Planning/Show')
+                ->has('proposedJourneys', 1)
+                ->where('proposedJourneys.0.route_preview.provider', 'mock')
+                ->where('proposedJourneys.0.route_preview.depot.source', 'planning_scenario_depot')
+                ->has('proposedJourneys.0.route_preview.geometry', 3)
+                ->where('proposedJourneys.0.stops.0.latitude', 4.72)
+                ->where('proposedJourneys.0.stops.0.longitude', -74.06)
+            );
+    }
 }
