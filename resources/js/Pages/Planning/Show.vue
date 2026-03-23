@@ -78,9 +78,19 @@ function configLabel(key, value) {
                     <p class="mt-1 text-sm text-gray-600">
                         Snapshot base del dia {{ scenario.service_date }} para {{ scenario.depot.name }}.
                     </p>
+                    <p v-if="scenario.is_bogota" class="mt-2 text-xs font-medium uppercase tracking-[0.18em] text-emerald-600">
+                        Compatible con comparación Bogotá-only
+                    </p>
                 </div>
 
                 <div class="flex flex-wrap gap-3">
+                    <Link
+                        v-if="scenario.is_bogota"
+                        :href="route('planning.scenarios.comparison', scenario.id)"
+                        class="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+                    >
+                        Abrir comparación Bogotá
+                    </Link>
                     <button
                         v-if="$page.props.auth.abilities.manage_planning"
                         type="button"

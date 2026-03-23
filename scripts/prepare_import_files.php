@@ -11,6 +11,7 @@ $sourceBranchMasterPaths = [
     $docsPath.'/droguerias_domicilios_07022026 (1).csv',
 ];
 $generatedPath = $docsPath.'/generated';
+$bogotaOnly = ! in_array('--all-cities', $argv, true);
 
 if (! is_file($sourceDriversPath) || ! is_readable($sourceDriversPath)) {
     fwrite(STDERR, "Missing readable source file: {$sourceDriversPath}\n");
@@ -268,6 +269,88 @@ $driverDepotReady = array_values(array_filter(
     static fn (array $row): bool => $row['ready_to_assign'] === '1'
 ));
 
+if ($bogotaOnly) {
+    $branches = array_filter(
+        $branches,
+        static fn (array $row): bool => matchesBogotaLocation(
+            $row['latitude'] ?? null,
+            $row['longitude'] ?? null,
+            $row['name'] ?? null,
+            $row['address'] ?? null,
+            $row['code'] ?? null,
+        )
+    );
+    $bogotaBranchCodes = array_fill_keys(array_keys($branches), true);
+
+    $depotCandidates = array_values(array_filter(
+        $depotCandidates,
+        static fn (array $row): bool => matchesBogotaLocation(
+            $row['latitude'] ?? null,
+            $row['longitude'] ?? null,
+            $row['name'] ?? null,
+            $row['address'] ?? null,
+            $row['code'] ?? null,
+        )
+    ));
+    $depotsSeed = array_values(array_filter(
+        $depotsSeed,
+        static fn (array $row): bool => matchesBogotaLocation(
+            $row['latitude'] ?? null,
+            $row['longitude'] ?? null,
+            $row['name'] ?? null,
+            $row['address'] ?? null,
+            $row['code'] ?? null,
+        )
+    ));
+
+    $bogotaDepotCodes = array_fill_keys(array_map(
+        static fn (array $row): string => (string) $row['code'],
+        $depotsSeed
+    ), true);
+
+    $driverDepotReview = array_values(array_filter(
+        $driverDepotReview,
+        static fn (array $row): bool => isset($bogotaDepotCodes[(string) ($row['suggested_depot_code'] ?? '')])
+    ));
+    $driverDepotReady = array_values(array_filter(
+        $driverDepotReady,
+        static fn (array $row): bool => isset($bogotaDepotCodes[(string) ($row['suggested_depot_code'] ?? '')])
+    ));
+
+    $allowedDriverIds = array_fill_keys(array_map(
+        static fn (array $row): string => (string) $row['driver_external_id'],
+        $driverDepotReady
+    ), true);
+
+    $driverRows = array_filter(
+        $driverRows,
+        static fn (array $row): bool => isset($allowedDriverIds[(string) ($row['external_id'] ?? '')])
+    );
+
+    $normalizedInvoices = array_values(array_filter(
+        $normalizedInvoices,
+        static fn (array $row): bool => isset($allowedDriverIds[(string) ($row['driver_external_id'] ?? '')])
+            && isset($bogotaBranchCodes[(string) ($row['branch_code'] ?? '')])
+    ));
+
+    ksort($driverRows, SORT_NATURAL);
+    ksort($branches, SORT_NATURAL);
+}
+
+writeCsv($generatedPath.'/drivers_import.csv', ['external_id', 'name', 'email', 'phone'], array_values($driverRows));
+writeCsv($generatedPath.'/branches_seed.csv', ['code', 'name', 'address', 'latitude', 'longitude', 'is_active'], array_values($branches));
+writeCsv($generatedPath.'/invoices_import.csv', [
+    'external_invoice_id',
+    'invoice_number',
+    'driver_external_id',
+    'driver_name',
+    'service_date',
+    'branch_code',
+    'historical_sequence',
+    'historical_latitude',
+    'historical_longitude',
+], $normalizedInvoices);
+
 writeCsv($generatedPath.'/depots_seed_candidates.csv', [
     'code',
     'name',
@@ -316,7 +399,7 @@ writeCsv($generatedPath.'/driver_depot_assignment_ready.csv', [
     $driverDepotReady
 ));
 
-fwrite(STDOUT, "Generated files in docs/generated/\n");
+fwrite(STDOUT, 'Generated files in docs/generated/'.($bogotaOnly ? ' (Bogotá-only default)' : ' (all cities)')."\n");
 fwrite(STDOUT, 'drivers_import.csv rows: '.count($driverRows)."\n");
 fwrite(STDOUT, 'branches_seed.csv rows: '.count($branches)."\n");
 fwrite(STDOUT, 'branches from master files: '.count($branchMasterCodes)."\n");
@@ -638,4 +721,42 @@ function buildDriverDepotAssignmentReview(array $driverStats): array
 function pickFilled(string $current, string $candidate): string
 {
     return $current !== '' ? $current : $candidate;
+}
+
+
+function matchesBogotaLocation(mixed $latitude, mixed $longitude, ?string $primaryLabel = null, ?string $secondaryLabel = null, ?string $code = null): bool
+{
+    if (isInsideBogotaBoundingBox($latitude, $longitude)) {
+        return true;
+    }
+
+    $haystack = normalizeBogotaText(implode(' ', array_filter([
+        $primaryLabel,
+        $secondaryLabel,
+        $code,
+    ])));
+
+    return str_contains($haystack, 'bogota');
+}
+
+function isInsideBogotaBoundingBox(mixed $latitude, mixed $longitude): bool
+{
+    if ($latitude === null || $longitude === null || $latitude === '' || $longitude === '') {
+        return false;
+    }
+
+    $lat = (float) $latitude;
+    $lng = (float) $longitude;
+
+    return $lat >= 4.45
+        && $lat <= 4.90
+        && $lng >= -74.35
+        && $lng <= -73.95;
+}
+
+function normalizeBogotaText(string $value): string
+{
+    $ascii = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $value);
+
+    return strtolower($ascii === false ? $value : $ascii);
 }

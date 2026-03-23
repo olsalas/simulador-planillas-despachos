@@ -127,7 +127,7 @@ function statusLabel(status) {
                                         :key="depot.id"
                                         :value="depot.id"
                                     >
-                                        {{ depot.code }} · {{ depot.name }} · {{ depot.active_drivers_count }} activos
+                                        {{ depot.code }} · {{ depot.name }} · {{ depot.active_drivers_count }} activos{{ depot.is_bogota ? ' · Bogotá MVP' : '' }}
                                     </option>
                                 </select>
                                 <span v-if="form.errors.depot_id" class="text-xs text-red-600">
@@ -157,11 +157,12 @@ function statusLabel(status) {
                             <li>Snapshot de demanda agrupada por paradas usando branches geocodificados.</li>
                             <li>Identificacion explicita de paradas excluidas por calidad de datos.</li>
                             <li>Propuesta base de asignacion a conductores activos del depot.</li>
+                            <li>Vista comparativa Bogotá-only sobre escenarios compatibles.</li>
                         </ul>
 
                         <div class="mt-5 rounded-xl bg-sky-50 p-4 text-sm text-sky-900">
                             La fuente de demanda de esta version usa las facturas historicas del dia asociadas a conductores del depot.
-                            El siguiente salto es desacoplarla hacia una propuesta operativa independiente del historico.
+                            Para el MVP Bogotá, el corte operativo se interpreta como fecha + depot Bogotá.
                         </div>
                     </div>
                 </section>
@@ -206,6 +207,13 @@ function statusLabel(status) {
                                 </span>
                             </div>
 
+                            <p
+                                v-if="scenario.is_bogota"
+                                class="mt-3 inline-flex rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700"
+                            >
+                                Bogotá MVP
+                            </p>
+
                             <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
                                 <div class="rounded-xl bg-white p-3">
                                     <dt class="text-gray-500">Facturas</dt>
@@ -233,12 +241,21 @@ function statusLabel(status) {
                                 </div>
                             </dl>
 
-                            <Link
-                                :href="route('planning.scenarios.show', scenario.id)"
-                                class="mt-5 inline-flex items-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
-                            >
-                                Ver detalle del escenario
-                            </Link>
+                            <div class="mt-5 flex flex-wrap gap-3">
+                                <Link
+                                    :href="route('planning.scenarios.show', scenario.id)"
+                                    class="inline-flex items-center rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                                >
+                                    Ver detalle del escenario
+                                </Link>
+                                <Link
+                                    v-if="scenario.is_bogota"
+                                    :href="route('planning.scenarios.comparison', scenario.id)"
+                                    class="inline-flex items-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+                                >
+                                    Comparación Bogotá
+                                </Link>
+                            </div>
                         </article>
                     </div>
                 </section>

@@ -19,7 +19,9 @@ Aplicación Laravel + Inertia/Vue para:
 - Simulación: `app/Http/Controllers/SimulationController.php`, `app/Domain/Simulation/BuildSimulationRouteService.php`
 - Comparador histórico: `app/Domain/Simulation/BuildJourneyComparisonService.php`, `resources/js/Pages/Simulation/Run.vue`
 - Planillado diario: `app/Http/Controllers/Planning/PlanningScenarioController.php`, `app/Domain/Planning/CreatePlanningScenarioService.php`, `app/Domain/Planning/GeneratePlanningScenarioAllocationService.php`
+- Comparación Bogotá: `app/Http/Controllers/Planning/PlanningScenarioComparisonController.php`, `app/Domain/Planning/BuildBogotaPlanningComparisonService.php`, `app/Domain/Planning/BogotaScope.php`
 - Mapa de planillado: `resources/js/Components/PlanningJourneyMap.vue`, `resources/js/Pages/Planning/Show.vue`
+- Mapa comparativo Bogotá: `resources/js/Components/OperationalComparisonMap.vue`, `resources/js/Pages/Planning/Comparison.vue`
 - Providers de ruteo: `app/Contracts/RoutingProvider.php`, `app/Domain/Routing/Providers/*.php`
 - Resolución de provider: `app/Providers/AppServiceProvider.php`, `config/routing.php`, `config/services.php`
 - Frontend principal:
@@ -27,6 +29,7 @@ Aplicación Laravel + Inertia/Vue para:
   - Batches: `resources/js/Pages/Ingestion/Batches.vue`
   - Simulación: `resources/js/Pages/Simulation/Run.vue`
   - Planillado diario: `resources/js/Pages/Planning/Index.vue`, `resources/js/Pages/Planning/Show.vue`
+  - Comparación Bogotá: `resources/js/Pages/Planning/Comparison.vue`
 
 ## Estado actual resumido
 
@@ -57,6 +60,20 @@ Aplicación Laravel + Inertia/Vue para:
 ./vendor/bin/sail npm run dev
 ./vendor/bin/sail artisan test
 ```
+
+### Datos demo Bogotá-only
+
+```bash
+./vendor/bin/sail php scripts/prepare_import_files.php
+./vendor/bin/sail artisan demo:load-generated-data
+./vendor/bin/sail artisan demo:prune-non-bogota
+./vendor/bin/sail artisan demo:prune-non-bogota --force
+```
+
+Notas:
+- `prepare_import_files.php` y `demo:load-generated-data` trabajan Bogotá-only por defecto
+- usa `--all-cities` solo si necesitas abrir temporalmente el universo completo para análisis interno
+- `demo:prune-non-bogota` hace `dry-run` por defecto; con `--force` elimina data no-Bogotá y reconstruye derivados históricos
 
 ### Arranque recomendado al retomar
 
