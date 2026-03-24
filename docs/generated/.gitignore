@@ -1,2 +1,7 @@
 *
 !.gitignore
+!branches_seed.csv
+!depots_seed.csv
+!drivers_import.csv
+!driver_depot_assignment_ready.csv
+!invoices_import.csv

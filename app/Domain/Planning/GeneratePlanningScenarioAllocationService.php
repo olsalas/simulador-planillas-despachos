@@ -147,6 +147,94 @@ class GeneratePlanningScenarioAllocationService
      * @param  list<PlanningScenarioStop>  $stops
      * @param  array<string, mixed>  $configuration
      * @return array{
+     *     journeys: list<array<string, mixed>>,
+     *     unassigned: list<array<string, mixed>>
+     * }
+     */
+    public function preview(Depot $depot, array $drivers, array $stops, array $configuration = []): array
+    {
+        if ($stops === []) {
+            return [
+                'journeys' => [],
+                'unassigned' => [],
+            ];
+        }
+
+        if ($drivers === []) {
+            return [
+                'journeys' => [],
+                'unassigned' => array_map(
+                    fn (PlanningScenarioStop $stop): array => $this->buildUnassignedStopPayload($stop, 'no_active_drivers'),
+                    $stops,
+                ),
+            ];
+        }
+
+        $groups = $this->partitionStops($depot, $drivers, $stops, $configuration);
+        $journeys = [];
+
+        foreach ($groups['journeys'] as $index => $journeyGroup) {
+            /** @var Driver $driver */
+            $driver = $journeyGroup['driver'];
+            $orderedStops = $this->orderJourneyStops($depot, $journeyGroup['stops']);
+
+            $routePreview = $this->buildSimulationRouteService->buildPreviewFromDepot(
+                $this->depotPayload($depot),
+                array_map(fn (array $stop): array => $this->buildRouteStopPayload($stop), $orderedStops),
+                (bool) ($configuration['return_to_depot'] ?? true),
+                metadata: [
+                    'label' => 'Propuesta base',
+                    'source' => 'planning_allocation_preview',
+                    'algorithm' => 'angular_sweep_nearest_neighbor',
+                ],
+            );
+
+            $journeys[] = [
+                'journey_kind' => 'proposed',
+                'driver_key' => 'driver:'.$driver->id,
+                'driver' => [
+                    'id' => $driver->id,
+                    'name' => $driver->name,
+                    'external_id' => $driver->external_id,
+                    'is_active' => (bool) $driver->is_active,
+                ],
+                'name' => sprintf('Jornada propuesta %02d · %s', $index + 1, $driver->name),
+                'status' => 'preview',
+                'total_stops' => count($orderedStops),
+                'total_invoices' => array_sum(array_map(
+                    fn (array $stop): int => (int) $stop['invoice_count'],
+                    $orderedStops,
+                )),
+                'summary' => [
+                    'distance_meters' => (float) $routePreview['metrics']['distance_meters'],
+                    'duration_seconds' => (float) $routePreview['metrics']['duration_seconds'],
+                    'provider' => $routePreview['provider'],
+                    'cache_hit' => $routePreview['cache_hit'],
+                    'return_to_depot' => $routePreview['return_to_depot'],
+                ],
+                'route_preview' => $routePreview,
+                'stops' => array_map(
+                    fn (array $stop, int $sequence): array => $this->buildPreviewStopPayload($stop['model'], $sequence + 1),
+                    $orderedStops,
+                    array_keys($orderedStops),
+                ),
+            ];
+        }
+
+        return [
+            'journeys' => $journeys,
+            'unassigned' => array_map(
+                fn (array $stop): array => $this->buildUnassignedStopPayload($stop['model'], $stop['reason']),
+                $groups['unassigned'],
+            ),
+        ];
+    }
+
+    /**
+     * @param  list<Driver>  $drivers
+     * @param  list<PlanningScenarioStop>  $stops
+     * @param  array<string, mixed>  $configuration
+     * @return array{
      *     journeys: list<array{driver: Driver, stops: list<array<string, mixed>>}>,
      *     unassigned: list<array{model: PlanningScenarioStop, reason: string}>
      * }
@@ -401,6 +489,46 @@ class GeneratePlanningScenarioAllocationService
             'historical_sequence' => $model->historical_sequence_min,
             'lat' => (float) $model->latitude,
             'lng' => (float) $model->longitude,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildPreviewStopPayload(PlanningScenarioStop $stop, int $sequence): array
+    {
+        return [
+            'planning_scenario_stop_id' => $stop->id,
+            'stop_key' => $stop->stop_key,
+            'branch_id' => $stop->branch_id,
+            'branch_code' => $stop->branch_code,
+            'branch_name' => $stop->branch_name,
+            'branch_address' => $stop->branch_address,
+            'invoice_count' => (int) $stop->invoice_count,
+            'historical_sequence_min' => $stop->historical_sequence_min,
+            'sequence' => $sequence,
+            'suggested_sequence' => $sequence,
+            'lat' => (float) $stop->latitude,
+            'lng' => (float) $stop->longitude,
+            'assignment_reason' => 'angular_sweep_partition',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildUnassignedStopPayload(PlanningScenarioStop $stop, string $reason): array
+    {
+        return [
+            'planning_scenario_stop_id' => $stop->id,
+            'stop_key' => $stop->stop_key,
+            'branch_id' => $stop->branch_id,
+            'branch_code' => $stop->branch_code,
+            'branch_name' => $stop->branch_name,
+            'branch_address' => $stop->branch_address,
+            'invoice_count' => (int) $stop->invoice_count,
+            'historical_sequence_min' => $stop->historical_sequence_min,
+            'reason' => $reason,
         ];
     }
 

@@ -6,6 +6,8 @@ Aplicacion Laravel + Inertia/Vue para construir un asistente de planillado logis
    Permite ver `como fue` una jornada historica de conductor + dia y compararla contra `como pudo ser` con una secuencia sugerida mejor.
 2. `Planillado diario`
    Permite crear un escenario por `fecha + depot`, generar una propuesta base de asignacion y visualizar las jornadas propuestas en mapa.
+3. `Comparacion operativa Bogota`
+   Permite tomar un escenario Bogota por `fecha + depot`, filtrar el corte a Bogota y contrastar `como fue` la asignacion real vs `como la hubieramos planillado` con la heuristica actual.
 
 La ingesta CSV sigue siendo importante, pero ya no es el unico valor del producto. Hoy el repo ya soporta:
 - carga de historicos (`drivers` e `invoices`),
@@ -13,6 +15,7 @@ La ingesta CSV sigue siendo importante, pero ya no es el unico valor del product
 - comparacion historica vs sugerida,
 - generacion de escenarios diarios por depot,
 - propuesta base de asignacion a conductores,
+- comparacion Bogota-only entre operacion real y propuesta,
 - visualizacion de rutas en mapa con HERE o fallback `mock`.
 
 ## Stack tecnico
@@ -63,6 +66,25 @@ Permite:
 - ver rutas sugeridas en mapa por jornada,
 - revisar paradas candidatas, no asignadas y excluidas.
 
+### 4. Comparacion operativa Bogota
+
+Pantalla:
+- `/dashboard/planning-scenarios/{planningScenario}/comparison`
+
+Permite:
+- tomar el escenario de un depot Bogota como corte operativo,
+- filtrar a Bogota las paradas del escenario,
+- reconstruir `como fue` la asignacion real por conductor,
+- generar `como la hubieramos planillado` con la heuristica actual,
+- comparar resumen general del corte,
+- bajar al detalle por conductor,
+- excluir explicitamente puntos fuera de Bogota y datos sin calidad suficiente.
+
+Definicion pragmatica del MVP:
+- `corte operativo = fecha + depot Bogota`
+- no hay ventana intradia persistida todavia en el modelo importado actual
+- la vista excluye paradas fuera de Bogota para mantener la narrativa urbana de demo
+
 ## Rutas principales de UI
 
 - `/dashboard`
@@ -72,6 +94,7 @@ Permite:
 - `/dashboard/simulate`
 - `/dashboard/planning-scenarios`
 - `/dashboard/planning-scenarios/{planningScenario}`
+- `/dashboard/planning-scenarios/{planningScenario}/comparison`
 
 ## Inicio rapido
 
@@ -145,6 +168,13 @@ Preparar archivos normalizados:
 ./vendor/bin/sail php scripts/prepare_import_files.php
 ```
 
+Por defecto, este paso ahora genera un set operativo Bogotá-only.
+Si alguna vez necesitas regenerar el universo completo para análisis interno, usa:
+
+```bash
+./vendor/bin/sail php scripts/prepare_import_files.php --all-cities
+```
+
 Salida local:
 - `docs/generated/depots_seed.csv`
 - `docs/generated/driver_depot_assignment_ready.csv`
@@ -158,11 +188,26 @@ Cargar demo local:
 ./vendor/bin/sail artisan demo:load-generated-data
 ```
 
+Ese comando también aplica un filtro Bogotá-only por defecto como defensa adicional, incluso si los CSV vinieran mezclados.
+Para desactivar esa defensa de forma explícita y cargar todas las ciudades:
+
+```bash
+./vendor/bin/sail artisan demo:load-generated-data --all-cities
+```
+
+Si ya existe una base mezclada y quieres dejarla segura para demo/despliegue Bogotá-only:
+
+```bash
+./vendor/bin/sail artisan demo:prune-non-bogota
+./vendor/bin/sail artisan demo:prune-non-bogota --force
+```
+
 Notas:
 - hace `upsert` de `branches` y `depots`
 - aplica asignaciones `driver -> depot`
 - importa `drivers` e `invoices` con el flujo real de ingesta
 - carga facturas por chunks para evitar limites de locks en PostgreSQL
+- `demo:prune-non-bogota` hace `dry-run` por defecto; con `--force` elimina data no-Bogotá, reinicia `planning_scenarios` y reconstruye `route_batches` + `invoice_stops` desde las facturas Bogotá restantes
 
 ## CSV soportados hoy
 

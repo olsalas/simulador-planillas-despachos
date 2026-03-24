@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Planning;
 
+use App\Domain\Planning\BogotaScope;
 use App\Domain\Planning\CreatePlanningScenarioService;
 use App\Domain\Planning\GeneratePlanningScenarioAllocationService;
 use App\Domain\Simulation\BuildSimulationRouteService;
@@ -17,7 +18,7 @@ use Inertia\Response;
 
 class PlanningScenarioController extends Controller
 {
-    public function index(): Response
+    public function index(BogotaScope $bogotaScope): Response
     {
         $depots = Depot::query()
             ->where('is_active', true)
@@ -34,6 +35,7 @@ class PlanningScenarioController extends Controller
                 'address' => $depot->address,
                 'active_drivers_count' => (int) $depot->active_drivers_count,
                 'total_drivers_count' => (int) $depot->total_drivers_count,
+                'is_bogota' => $bogotaScope->isBogotaDepot($depot),
             ])
             ->values();
 
@@ -53,6 +55,7 @@ class PlanningScenarioController extends Controller
                     'code' => $scenario->depot?->code,
                     'name' => $scenario->depot?->name,
                 ],
+                'is_bogota' => $scenario->depot !== null ? $bogotaScope->isBogotaDepot($scenario->depot) : false,
                 'summary' => $scenario->summary ?? [],
                 'last_generated_at' => $scenario->last_generated_at?->toIso8601String(),
             ])
@@ -85,6 +88,7 @@ class PlanningScenarioController extends Controller
     public function show(
         PlanningScenario $planningScenario,
         BuildSimulationRouteService $buildSimulationRouteService,
+        BogotaScope $bogotaScope,
     ): Response
     {
         $planningScenario->load(['depot:id,code,name,address,latitude,longitude', 'creator:id,name,email']);
@@ -209,6 +213,7 @@ class PlanningScenarioController extends Controller
                 'configuration' => $planningScenario->configuration ?? [],
                 'summary' => $planningScenario->summary ?? [],
                 'last_generated_at' => $planningScenario->last_generated_at?->toIso8601String(),
+                'is_bogota' => $planningScenario->depot !== null ? $bogotaScope->isBogotaDepot($planningScenario->depot) : false,
                 'depot' => [
                     'id' => $planningScenario->depot?->id,
                     'code' => $planningScenario->depot?->code,

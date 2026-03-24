@@ -117,6 +117,16 @@ Para probar el flujo completo de demo:
 ./vendor/bin/sail artisan demo:load-generated-data
 ```
 
+Ambos pasos trabajan Bogotá-only por defecto.
+Si necesitas abrir temporalmente todas las ciudades para análisis interno, usa `--all-cities` en el script y en el comando de carga.
+
+Si ya tienes una BD mezclada y quieres dejarla lista para el demo Bogotá-only:
+
+```bash
+./vendor/bin/sail artisan demo:prune-non-bogota
+./vendor/bin/sail artisan demo:prune-non-bogota --force
+```
+
 Eso deja:
 - `depots`
 - `branches`

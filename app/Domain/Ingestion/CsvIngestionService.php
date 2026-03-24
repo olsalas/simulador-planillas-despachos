@@ -7,7 +7,6 @@ use App\Models\Driver;
 use App\Models\IngestionBatch;
 use App\Models\IngestionRow;
 use App\Models\Invoice;
-use App\Models\InvoiceStop;
 use App\Models\RouteBatch;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +15,11 @@ use RuntimeException;
 
 class CsvIngestionService
 {
+    public function __construct(
+        private readonly ConsolidateRouteBatchesService $consolidateRouteBatchesService,
+    ) {
+    }
+
     /**
      * @param  'invoices'|'drivers'  $type
      * @return array<string, mixed>
@@ -85,7 +89,7 @@ class CsvIngestionService
             }
 
             $affectedBatchIds = $type === 'invoices'
-                ? $this->consolidateRouteBatches(array_keys($affectedKeys), $batch->id)
+                ? $this->consolidateRouteBatchesService->consolidate(array_keys($affectedKeys), $batch->id)
                 : [];
 
             $batch->update([
@@ -208,67 +212,6 @@ class CsvIngestionService
         );
 
         return $driver->id.'|'.$row['service_date'];
-    }
-
-    /**
-     * @param  list<string>  $affectedKeys
-     * @return list<int>
-     */
-    private function consolidateRouteBatches(array $affectedKeys, int $sourceIngestionBatchId): array
-    {
-        $routeBatchIds = [];
-
-        foreach ($affectedKeys as $affectedKey) {
-            [$driverId, $serviceDate] = explode('|', $affectedKey);
-
-            $invoices = Invoice::query()
-                ->where('driver_id', (int) $driverId)
-                ->whereDate('service_date', $serviceDate)
-                ->get();
-
-            $totalInvoices = $invoices->count();
-            $pendingInvoices = $invoices->where('status', 'pending')->count();
-            $groupedStops = $invoices->whereNotNull('branch_id')->groupBy('branch_id');
-            $totalStops = $groupedStops->count();
-
-            $routeBatch = RouteBatch::updateOrCreate(
-                [
-                    'driver_id' => (int) $driverId,
-                    'service_date' => $serviceDate,
-                ],
-                [
-                    'source_ingestion_batch_id' => $sourceIngestionBatchId,
-                    'total_invoices' => $totalInvoices,
-                    'total_stops' => $totalStops,
-                    'pending_invoices' => $pendingInvoices,
-                    'status' => $pendingInvoices > 0 ? 'partial' : 'ready',
-                ]
-            );
-
-            $routeBatchIds[] = $routeBatch->id;
-
-            InvoiceStop::query()
-                ->where('driver_id', (int) $driverId)
-                ->whereDate('service_date', $serviceDate)
-                ->delete();
-
-            foreach ($groupedStops as $branchId => $group) {
-                $pendingAtStop = $group->where('status', 'pending')->count();
-
-                InvoiceStop::create([
-                    'driver_id' => (int) $driverId,
-                    'branch_id' => (int) $branchId,
-                    'service_date' => $serviceDate,
-                    'invoice_count' => $group->count(),
-                    'planned_sequence' => null,
-                    'status' => $pendingAtStop > 0 ? 'partial' : 'ready',
-                    'distance_from_previous_meters' => null,
-                    'travel_time_from_previous_seconds' => null,
-                ]);
-            }
-        }
-
-        return $routeBatchIds;
     }
 
     /**

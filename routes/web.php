@@ -3,6 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Ingestion\BatchController;
 use App\Http\Controllers\Ingestion\UploadCsvController;
+use App\Http\Controllers\Planning\PlanningScenarioComparisonController;
 use App\Http\Controllers\Planning\PlanningScenarioController;
 use App\Http\Controllers\SimulationController;
 use Illuminate\Foundation\Application;
@@ -44,6 +45,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware('can:view-planning')->group(function () {
         Route::get('/dashboard/planning-scenarios', [PlanningScenarioController::class, 'index'])->name('planning.scenarios.index');
         Route::get('/dashboard/planning-scenarios/{planningScenario}', [PlanningScenarioController::class, 'show'])->name('planning.scenarios.show');
+        Route::get('/dashboard/planning-scenarios/{planningScenario}/comparison', [PlanningScenarioComparisonController::class, 'show'])->name('planning.scenarios.comparison');
     });
 
     Route::middleware('can:manage-planning')->group(function () {
